@@ -82,9 +82,19 @@ func toolHitsHandler(ctx context.Context, cfg *config.Config, tcr mcp.CallToolRe
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	fields, err := GetToolReqParam[[]string](tcr, "field", false)
+	// Use []any because JSON unmarshals arrays as []interface{}, not []string.
+	// Then convert to []string with validation.
+	fieldsAny, err := GetToolReqParam[[]any](tcr, "field", false)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
+	}
+	var fields []string
+	for i, f := range fieldsAny {
+		s, ok := f.(string)
+		if !ok {
+			return mcp.NewToolResultError(fmt.Sprintf("field[%d] must be a string, got %T", i, f)), nil
+		}
+		fields = append(fields, s)
 	}
 
 	fieldsLimit, err := GetToolReqParam[float64](tcr, "fields_limit", false)
