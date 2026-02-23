@@ -4,7 +4,7 @@ go 1.25.5
 
 require (
 	github.com/VictoriaMetrics/VictoriaLogs v1.43.1
-	github.com/VictoriaMetrics/metrics v1.40.2
+	github.com/VictoriaMetrics/metrics v1.41.2
 	github.com/blevesearch/bleve/v2 v2.5.7
 	github.com/mark3labs/mcp-go v0.43.2
 	github.com/tmc/langchaingo v0.1.14
