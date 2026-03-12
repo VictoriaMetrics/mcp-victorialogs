@@ -150,15 +150,7 @@ func GetToolReqEnv(tcr mcp.CallToolRequest) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get env: %v", err)
 	}
-	if env != "" {
-		return strings.ToLower(strings.TrimSpace(env)), nil
-	}
-
-	environment, err := GetToolReqParam[string](tcr, "environment", false)
-	if err != nil {
-		return "", fmt.Errorf("failed to get environment: %v", err)
-	}
-	return strings.ToLower(strings.TrimSpace(environment)), nil
+	return strings.ToLower(strings.TrimSpace(env)), nil
 }
 
 func getToolEnvironment(cfg *config.Config, tcr mcp.CallToolRequest) (*config.InstanceConfig, error) {

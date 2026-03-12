@@ -427,9 +427,9 @@ func TestGetToolReqEnv(t *testing.T) {
 			expected: "prod",
 		},
 		{
-			name:     "environment alias",
-			args:     map[string]any{"environment": "staging"},
-			expected: "staging",
+			name:     "empty env returns empty",
+			args:     map[string]any{},
+			expected: "",
 		},
 		{
 			name:      "invalid env type",
@@ -505,7 +505,7 @@ func TestCreateSelectRequest_UsesSelectedEnvironment(t *testing.T) {
 	}
 }
 
-func TestCreateAdminRequest_UsesEnvironmentAlias(t *testing.T) {
+func TestCreateAdminRequest_UsesSelectedEnvironment(t *testing.T) {
 	t.Setenv("VL_INSTANCE_ENTRYPOINT", "")
 	t.Setenv("VL_INSTANCE_BEARER_TOKEN", "")
 	t.Setenv("VL_INSTANCE_HEADERS", "")
@@ -524,7 +524,7 @@ func TestCreateAdminRequest_UsesEnvironmentAlias(t *testing.T) {
 
 	tcr := mcp.CallToolRequest{}
 	tcr.Params.Arguments = map[string]any{
-		"environment": "prod",
+		"env": "prod",
 	}
 
 	req, err := CreateAdminRequest(context.Background(), cfg, tcr, "flags")
