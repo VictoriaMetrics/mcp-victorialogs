@@ -21,6 +21,7 @@ var (
 			DestructiveHint: ptr(false),
 			OpenWorldHint:   ptr(true),
 		}),
+		withEnvironmentParam(),
 	)
 )
 

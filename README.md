@@ -151,16 +151,28 @@ MCP Server for VictoriaLogs is configured via environment variables:
 
 | Variable                   | Description                                             | Required | Default          | Allowed values         |
 |----------------------------|---------------------------------------------------------|----------|------------------|------------------------|
-| `VL_INSTANCE_ENTRYPOINT`   | URL to VictoriaLogs instance                            | Yes      | -                | -                      |
-| `VL_INSTANCE_BEARER_TOKEN` | Authentication token for VictoriaLogs API               | No       | -                | -                      |
-| `VL_INSTANCE_HEADERS`      | Custom HTTP headers to send with requests (comma-separated key=value pairs) | No       | -                | -                      |
-| `VL_DEFAULT_TENANT_ID`     | Default tenant ID used when tenant is not specified in requests (format: `AccountID:ProjectID` or `AccountID`) | No       | `0:0`            | -                      |
+| `VL_INSTANCE_ENTRYPOINT`   | URL to VictoriaLogs instance in single-instance mode. This is the default setup when `VL_ENVIRONMENTS` is not set | Yes*     | -                | -                      |
+| `VL_INSTANCE_BEARER_TOKEN` | Authentication token for VictoriaLogs API in single-instance mode | No       | -                | -                      |
+| `VL_INSTANCE_HEADERS`      | Custom HTTP headers to send with requests in single-instance mode (comma-separated key=value pairs) | No       | -                | -                      |
+| `VL_DEFAULT_TENANT_ID`     | Default tenant ID used when tenant is not specified in single-instance mode (format: `AccountID:ProjectID` or `AccountID`) | No       | `0:0`            | -                      |
+| `VL_ENVIRONMENTS`          | Comma-separated list of named VictoriaLogs environments exposed by one MCP instance | Yes*     | -                | -                      |
+| `VL_DEFAULT_ENVIRONMENT`   | Default environment used when a tool call omits `env`   | No       | First value in `VL_ENVIRONMENTS` | -         |
+| `VL_INSTANCE_<ENV>_ENTRYPOINT` | URL to the VictoriaLogs instance for the named environment | Yes** | -                | -                      |
+| `VL_INSTANCE_<ENV>_BEARER_TOKEN` | Authentication token for the named environment | No       | -                | -                      |
+| `VL_INSTANCE_<ENV>_HEADERS` | Custom HTTP headers for the named environment (comma-separated key=value pairs) | No | - | - |
+| `VL_INSTANCE_<ENV>_DEFAULT_TENANT_ID` | Default tenant ID for the named environment | No | `0:0` | - |
 | `MCP_SERVER_MODE`          | Server operation mode. See [Modes](#modes) for details. | No       | `stdio`          | `stdio`, `sse`, `http` |
 | `MCP_LISTEN_ADDR`          | Address for SSE or HTTP server to listen on             | No       | `localhost:8081` | -                      |
 | `MCP_DISABLED_TOOLS`       | Comma-separated list of tools to disable                | No       | -                | -                      |
 | `MCP_HEARTBEAT_INTERVAL`   | Defines the heartbeat interval for the streamable-http protocol. <br /> It means the MCP server will send a heartbeat to the client through the GET connection, <br /> to keep the connection alive from being closed by the network infrastructure (e.g. gateways) | No       | `30s`            | -                      |
 | `MCP_LOG_FORMAT`           | Log output format                                                                                                                                                                                                                                                      | No       | `text`           | `text`, `json`         |
 | `MCP_LOG_LEVEL`            | Minimum log level                                                                                                                                                                                                                                                      | No       | `info`           | `debug`, `info`, `warn`, `error` |
+
+`*` Configure either the single-instance variables or `VL_ENVIRONMENTS`, not both.
+
+`**` Required for each environment listed in `VL_ENVIRONMENTS`.
+
+For environment names, the tool argument uses the lowercase name from `VL_ENVIRONMENTS`, for example `env="prod"`. The per-environment variable suffix uses the uppercased name with non-alphanumeric characters replaced by `_`, for example `prod-eu` becomes `VL_INSTANCE_PROD_EU_ENTRYPOINT`.
 
 ### Modes
 
@@ -189,6 +201,24 @@ export VL_INSTANCE_HEADERS="<HEADER>=<HEADER_VALUE>,<HEADER>=<HEADER_VALUE>"
 export MCP_SERVER_MODE="sse"
 export MCP_SSE_ADDR="0.0.0.0:8081"
 export MCP_DISABLED_TOOLS="hits,facets"
+```
+
+### Multiple environments
+
+```bash
+export VL_ENVIRONMENTS="demo,staging,prod"
+export VL_DEFAULT_ENVIRONMENT="prod"
+
+export VL_INSTANCE_DEMO_ENTRYPOINT="https://demo-vmlogs.example.com"
+export VL_INSTANCE_STAGING_ENTRYPOINT="https://staging-vmlogs.example.com"
+export VL_INSTANCE_PROD_ENTRYPOINT="https://vmlogs.example.com"
+export VL_INSTANCE_PROD_BEARER_TOKEN="<YOUR_PROD_TOKEN>"
+export VL_INSTANCE_PROD_HEADERS="X-Scope=prod"
+
+# Then select the target instance per tool call:
+# env="demo"    -> demo-vmlogs.example.com
+# env="staging" -> staging-vmlogs.example.com
+# omit env      -> vmlogs.example.com (prod)
 ```
 
 ## Endpoints

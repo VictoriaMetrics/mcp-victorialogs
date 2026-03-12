@@ -15,6 +15,8 @@ func TestInitConfig(t *testing.T) {
 	originalBearerToken := os.Getenv("VL_INSTANCE_BEARER_TOKEN")
 	originalHeartbeatInterval := os.Getenv("MCP_HEARTBEAT_INTERVAL")
 	originalDefaultTenantID := os.Getenv("VL_DEFAULT_TENANT_ID")
+	originalEnvironments := os.Getenv("VL_ENVIRONMENTS")
+	originalDefaultEnvironment := os.Getenv("VL_DEFAULT_ENVIRONMENT")
 
 	// Restore environment variables after test
 	defer func() {
@@ -24,7 +26,12 @@ func TestInitConfig(t *testing.T) {
 		os.Setenv("VL_INSTANCE_BEARER_TOKEN", originalBearerToken)
 		os.Setenv("MCP_HEARTBEAT_INTERVAL", originalHeartbeatInterval)
 		os.Setenv("VL_DEFAULT_TENANT_ID", originalDefaultTenantID)
+		os.Setenv("VL_ENVIRONMENTS", originalEnvironments)
+		os.Setenv("VL_DEFAULT_ENVIRONMENT", originalDefaultEnvironment)
 	}()
+
+	os.Setenv("VL_ENVIRONMENTS", "")
+	os.Setenv("VL_DEFAULT_ENVIRONMENT", "")
 
 	// Test case 1: Valid configuration
 	t.Run("Valid configuration", func(t *testing.T) {
@@ -311,6 +318,88 @@ func TestInitConfig(t *testing.T) {
 		_, err := InitConfig()
 		if err == nil {
 			t.Fatal("Expected error for invalid tenant ID format, got nil")
+		}
+	})
+
+	t.Run("Multiple environments", func(t *testing.T) {
+		os.Setenv("VL_INSTANCE_ENTRYPOINT", "")
+		os.Setenv("VL_INSTANCE_BEARER_TOKEN", "")
+		os.Setenv("VL_INSTANCE_HEADERS", "")
+		os.Setenv("VL_DEFAULT_TENANT_ID", "")
+		os.Setenv("VL_ENVIRONMENTS", "demo, staging, prod")
+		os.Setenv("VL_DEFAULT_ENVIRONMENT", "prod")
+		os.Setenv("VL_INSTANCE_DEMO_ENTRYPOINT", "https://demo.example.com")
+		os.Setenv("VL_INSTANCE_DEMO_BEARER_TOKEN", "demo-token")
+		os.Setenv("VL_INSTANCE_DEMO_HEADERS", "X-Scope=demo")
+		os.Setenv("VL_INSTANCE_DEMO_DEFAULT_TENANT_ID", "1:10")
+		os.Setenv("VL_INSTANCE_STAGING_ENTRYPOINT", "https://staging.example.com")
+		os.Setenv("VL_INSTANCE_STAGING_DEFAULT_TENANT_ID", "2:20")
+		os.Setenv("VL_INSTANCE_PROD_ENTRYPOINT", "https://prod.example.com")
+		os.Setenv("VL_INSTANCE_PROD_BEARER_TOKEN", "prod-token")
+		os.Setenv("VL_INSTANCE_PROD_HEADERS", "X-Scope=prod,X-Cluster=main")
+		os.Setenv("VL_INSTANCE_PROD_DEFAULT_TENANT_ID", "3:30")
+
+		cfg, err := InitConfig()
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+
+		if cfg.DefaultEnvironment() != "prod" {
+			t.Fatalf("Expected default environment prod, got %q", cfg.DefaultEnvironment())
+		}
+
+		expectedNames := []string{"demo", "staging", "prod"}
+		actualNames := cfg.EnvironmentNames()
+		if len(actualNames) != len(expectedNames) {
+			t.Fatalf("Expected %d environments, got %d", len(expectedNames), len(actualNames))
+		}
+		for i, name := range expectedNames {
+			if actualNames[i] != name {
+				t.Fatalf("Expected env[%d] %q, got %q", i, name, actualNames[i])
+			}
+		}
+
+		prod, err := cfg.Environment("prod")
+		if err != nil {
+			t.Fatalf("Expected prod environment, got error: %v", err)
+		}
+		if prod.EntryPointURL().String() != "https://prod.example.com" {
+			t.Fatalf("Expected prod URL, got %q", prod.EntryPointURL().String())
+		}
+		if prod.BearerToken() != "prod-token" {
+			t.Fatalf("Expected prod bearer token, got %q", prod.BearerToken())
+		}
+		if prod.CustomHeaders()["X-Scope"] != "prod" || prod.CustomHeaders()["X-Cluster"] != "main" {
+			t.Fatalf("Expected prod custom headers, got %#v", prod.CustomHeaders())
+		}
+		if prod.DefaultTenantID().AccountID != 3 || prod.DefaultTenantID().ProjectID != 30 {
+			t.Fatalf("Expected prod default tenant 3:30, got %d:%d", prod.DefaultTenantID().AccountID, prod.DefaultTenantID().ProjectID)
+		}
+	})
+
+	t.Run("Multiple environments reject legacy variables", func(t *testing.T) {
+		os.Setenv("VL_INSTANCE_ENTRYPOINT", "http://legacy.example.com")
+		os.Setenv("VL_ENVIRONMENTS", "prod")
+		os.Setenv("VL_DEFAULT_ENVIRONMENT", "prod")
+		os.Setenv("VL_INSTANCE_PROD_ENTRYPOINT", "https://prod.example.com")
+
+		_, err := InitConfig()
+		if err == nil {
+			t.Fatal("Expected error when mixing legacy and multiple environment configuration")
+		}
+	})
+
+	t.Run("Multiple environments reject non-ASCII names", func(t *testing.T) {
+		os.Setenv("VL_INSTANCE_ENTRYPOINT", "")
+		os.Setenv("VL_INSTANCE_BEARER_TOKEN", "")
+		os.Setenv("VL_INSTANCE_HEADERS", "")
+		os.Setenv("VL_DEFAULT_TENANT_ID", "")
+		os.Setenv("VL_ENVIRONMENTS", "prodé")
+		os.Setenv("VL_DEFAULT_ENVIRONMENT", "")
+
+		_, err := InitConfig()
+		if err == nil {
+			t.Fatal("Expected error for non-ASCII environment name, got nil")
 		}
 	})
 }

@@ -43,10 +43,15 @@ mcp:
   heartbeatInterval: 30s
 
 vl:
+  # Single-instance configuration. Configure exactly one mode:
+  # set vl.entrypoint for a single VictoriaLogs instance, or leave vl.* empty and use
+  # env below for VL_ENVIRONMENTS plus VL_INSTANCE_<ENV>_* variables.
   entrypoint: ""
   bearerToken: ""
   headers: []
 
+# Additional environment variables for the container. Use this for multi-environment
+# configuration such as VL_ENVIRONMENTS, VL_DEFAULT_ENVIRONMENT, and VL_INSTANCE_<ENV>_*.
 env: []
 
 securityContext: {}

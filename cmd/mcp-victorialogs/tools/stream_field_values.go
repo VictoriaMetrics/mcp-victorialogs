@@ -21,6 +21,7 @@ var (
 			DestructiveHint: ptr(false),
 			OpenWorldHint:   ptr(true),
 		}),
+		withEnvironmentParam(),
 		mcp.WithString("tenant",
 			mcp.Title("Tenant name (Account ID and Project ID)"),
 			mcp.Description("Name of the tenant for which the data will be displayed (format AccountID:ProjectID)"),

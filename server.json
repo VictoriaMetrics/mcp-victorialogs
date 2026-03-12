@@ -18,17 +18,59 @@
       "environmentVariables": [
         {
           "name": "VL_INSTANCE_ENTRYPOINT",
-          "description": "URL to VictoriaMetrics instance (it should be root URL of vmlingle or vlselect), for example http://localhost:9428 or https://play-vmlogs.victoriametrics.com",
-          "isRequired": true,
+          "description": "URL to VictoriaLogs instance in single-instance mode. This is the default setup when VL_ENVIRONMENTS is not set.",
+          "isRequired": false,
           "format": "string",
           "isSecret": false
         },
         {
           "name": "VL_INSTANCE_BEARER_TOKEN",
-          "description": "Authentication token for VictoriaMetrics API",
-          "isRequired": true,
+          "description": "Authentication token for VictoriaLogs API in single-instance mode",
+          "isRequired": false,
           "format": "string",
           "isSecret": true
+        },
+        {
+          "name": "VL_ENVIRONMENTS",
+          "description": "Comma-separated list of named VictoriaLogs environments exposed by this MCP server, for example demo,staging,prod",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "VL_DEFAULT_ENVIRONMENT",
+          "description": "Default environment used when a tool call omits env",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "VL_INSTANCE_<ENV>_ENTRYPOINT",
+          "description": "Per-environment VictoriaLogs entrypoint. Required for every environment listed in VL_ENVIRONMENTS.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "VL_INSTANCE_<ENV>_BEARER_TOKEN",
+          "description": "Per-environment bearer token for VictoriaLogs API",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "VL_INSTANCE_<ENV>_HEADERS",
+          "description": "Per-environment custom headers as comma-separated key=value pairs",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "VL_INSTANCE_<ENV>_DEFAULT_TENANT_ID",
+          "description": "Per-environment default tenant ID in AccountID:ProjectID format",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
         },
         {
           "name": "MCP_DISABLED_TOOLS",

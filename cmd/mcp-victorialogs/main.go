@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -65,16 +66,7 @@ func main() {
 	loggingHooks := hooks.NewLoggerHooks()
 	combinedHooks := hooks.Merge(metricsHooks, loggingHooks)
 
-	s := server.NewMCPServer(
-		"VictoriaLogs",
-		fmt.Sprintf("v%s (date: %s)", version, date),
-		server.WithRecovery(),
-		server.WithLogging(),
-		server.WithToolCapabilities(true),
-		server.WithResourceCapabilities(true, true),
-		server.WithPromptCapabilities(true),
-		server.WithHooks(combinedHooks),
-		server.WithInstructions(`
+	instructions := `
 You are Virtual Assistant, a tool for interacting with VictoriaLogs API and documentation in different tasks related to logs and observability.
 You use LogsQL language to query logs and get information from the logs stored in VictoriaLogs.
 
@@ -85,7 +77,21 @@ Use Documentation tool to get the most relevant documents for your task every ti
 You have many tools to get data from VictoriaLogs, but try to specify the query as accurately as possible, reducing the resulting sample, as some queries can be query heavy.
 
 Try not to second guess information - if you don't know something or lack information, it's better to ask.
-	`),
+	`
+	if envs := c.EnvironmentNames(); len(envs) > 1 {
+		instructions += fmt.Sprintf("\nThis server is configured with multiple VictoriaLogs environments: %s. Use the optional `env` argument on API tools to target a specific environment. If `env` is omitted, the default environment `%s` is used.\n", strings.Join(envs, ", "), c.DefaultEnvironment())
+	}
+
+	s := server.NewMCPServer(
+		"VictoriaLogs",
+		fmt.Sprintf("v%s (date: %s)", version, date),
+		server.WithRecovery(),
+		server.WithLogging(),
+		server.WithToolCapabilities(true),
+		server.WithResourceCapabilities(true, true),
+		server.WithPromptCapabilities(true),
+		server.WithHooks(combinedHooks),
+		server.WithInstructions(instructions),
 	)
 
 	resources.RegisterDocsResources(s, c)

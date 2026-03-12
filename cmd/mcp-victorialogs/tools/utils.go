@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/VictoriaMetrics/VictoriaLogs/lib/logstorage"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -19,7 +20,12 @@ func CreateSelectRequest(ctx context.Context, cfg *config.Config, tcr mcp.CallTo
 		return nil, fmt.Errorf("failed to get tenant: %v", err)
 	}
 
-	selectURL, err := getSelectURL(ctx, cfg, tcr, path...)
+	environment, err := getToolEnvironment(cfg, tcr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve env: %v", err)
+	}
+
+	selectURL, err := getSelectURL(ctx, environment, path...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get select URL: %v", err)
 	}
@@ -28,17 +34,17 @@ func CreateSelectRequest(ctx context.Context, cfg *config.Config, tcr mcp.CallTo
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
-	bearerToken := cfg.BearerToken()
+	bearerToken := environment.BearerToken()
 	if bearerToken != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", bearerToken))
 	}
 
 	// Add custom headers from configuration
-	for key, value := range cfg.CustomHeaders() {
+	for key, value := range environment.CustomHeaders() {
 		req.Header.Set(key, value)
 	}
 
-	defaultTenantID := cfg.DefaultTenantID()
+	defaultTenantID := environment.DefaultTenantID()
 	if accountID == "" {
 		accountID = strconv.FormatUint(uint64(defaultTenantID.AccountID), 10)
 	}
@@ -53,7 +59,12 @@ func CreateSelectRequest(ctx context.Context, cfg *config.Config, tcr mcp.CallTo
 }
 
 func CreateAdminRequest(ctx context.Context, cfg *config.Config, tcr mcp.CallToolRequest, path ...string) (*http.Request, error) {
-	selectURL, err := getRootURL(ctx, cfg, tcr, path...)
+	environment, err := getToolEnvironment(cfg, tcr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve env: %v", err)
+	}
+
+	selectURL, err := getRootURL(ctx, environment, path...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get select URL: %v", err)
 	}
@@ -62,25 +73,25 @@ func CreateAdminRequest(ctx context.Context, cfg *config.Config, tcr mcp.CallToo
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
-	bearerToken := cfg.BearerToken()
+	bearerToken := environment.BearerToken()
 	if bearerToken != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", bearerToken))
 	}
 
 	// Add custom headers from configuration
-	for key, value := range cfg.CustomHeaders() {
+	for key, value := range environment.CustomHeaders() {
 		req.Header.Set(key, value)
 	}
 
 	return req, nil
 }
 
-func getRootURL(_ context.Context, cfg *config.Config, _ mcp.CallToolRequest, path ...string) (string, error) {
-	return cfg.EntryPointURL().JoinPath(path...).String(), nil
+func getRootURL(_ context.Context, environment *config.InstanceConfig, path ...string) (string, error) {
+	return environment.EntryPointURL().JoinPath(path...).String(), nil
 }
 
-func getSelectURL(_ context.Context, cfg *config.Config, _ mcp.CallToolRequest, path ...string) (string, error) {
-	return cfg.EntryPointURL().JoinPath("select", "logsql").JoinPath(path...).String(), nil
+func getSelectURL(_ context.Context, environment *config.InstanceConfig, path ...string) (string, error) {
+	return environment.EntryPointURL().JoinPath("select", "logsql").JoinPath(path...).String(), nil
 }
 
 func GetTextBodyForRequest(req *http.Request, _ *config.Config) *mcp.CallToolResult {
@@ -132,6 +143,30 @@ func GetToolReqTenant(tcr mcp.CallToolRequest) (string, string, error) {
 	accountID := strconv.FormatUint(uint64(tenantID.AccountID), 10)
 	projectID := strconv.FormatUint(uint64(tenantID.ProjectID), 10)
 	return accountID, projectID, nil
+}
+
+func GetToolReqEnv(tcr mcp.CallToolRequest) (string, error) {
+	env, err := GetToolReqParam[string](tcr, "env", false)
+	if err != nil {
+		return "", fmt.Errorf("failed to get env: %v", err)
+	}
+	return strings.ToLower(strings.TrimSpace(env)), nil
+}
+
+func getToolEnvironment(cfg *config.Config, tcr mcp.CallToolRequest) (*config.InstanceConfig, error) {
+	envName, err := GetToolReqEnv(tcr)
+	if err != nil {
+		return nil, err
+	}
+	return cfg.Environment(envName)
+}
+
+func withEnvironmentParam() mcp.ToolOption {
+	return mcp.WithString("env",
+		mcp.Title("Environment"),
+		mcp.Description("Optional VictoriaLogs environment to target. If omitted, the server default environment is used."),
+		mcp.Pattern(`^[A-Za-z0-9_-]+$`),
+	)
 }
 
 func ptr[T any](v T) *T {

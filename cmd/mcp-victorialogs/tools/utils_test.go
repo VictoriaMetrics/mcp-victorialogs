@@ -413,3 +413,153 @@ func TestCreateSelectRequest_DefaultTenant(t *testing.T) {
 		})
 	}
 }
+
+func TestGetToolReqEnv(t *testing.T) {
+	testCases := []struct {
+		name      string
+		args      map[string]any
+		expected  string
+		expectErr bool
+	}{
+		{
+			name:     "env parameter",
+			args:     map[string]any{"env": "Prod"},
+			expected: "prod",
+		},
+		{
+			name:     "empty env returns empty",
+			args:     map[string]any{},
+			expected: "",
+		},
+		{
+			name:      "invalid env type",
+			args:      map[string]any{"env": 123},
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tcr := mcp.CallToolRequest{}
+			tcr.Params.Arguments = tc.args
+
+			env, err := GetToolReqEnv(tcr)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatal("Expected an error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Expected no error, got: %v", err)
+			}
+			if env != tc.expected {
+				t.Fatalf("Expected env %q, got %q", tc.expected, env)
+			}
+		})
+	}
+}
+
+func TestCreateSelectRequest_UsesSelectedEnvironment(t *testing.T) {
+	t.Setenv("VL_INSTANCE_ENTRYPOINT", "")
+	t.Setenv("VL_INSTANCE_BEARER_TOKEN", "")
+	t.Setenv("VL_INSTANCE_HEADERS", "")
+	t.Setenv("VL_DEFAULT_TENANT_ID", "")
+	t.Setenv("VL_ENVIRONMENTS", "demo,prod")
+	t.Setenv("VL_DEFAULT_ENVIRONMENT", "demo")
+	t.Setenv("VL_INSTANCE_DEMO_ENTRYPOINT", "https://demo.example.com")
+	t.Setenv("VL_INSTANCE_DEMO_BEARER_TOKEN", "demo-token")
+	t.Setenv("VL_INSTANCE_DEMO_HEADERS", "X-Scope=demo")
+	t.Setenv("VL_INSTANCE_DEMO_DEFAULT_TENANT_ID", "1:10")
+	t.Setenv("VL_INSTANCE_PROD_ENTRYPOINT", "https://prod.example.com")
+	t.Setenv("VL_INSTANCE_PROD_BEARER_TOKEN", "prod-token")
+	t.Setenv("VL_INSTANCE_PROD_HEADERS", "X-Scope=prod")
+	t.Setenv("VL_INSTANCE_PROD_DEFAULT_TENANT_ID", "2:20")
+
+	cfg, err := config.InitConfig()
+	if err != nil {
+		t.Fatalf("Failed to init config: %v", err)
+	}
+
+	tcr := mcp.CallToolRequest{}
+	tcr.Params.Arguments = map[string]any{
+		"env": "prod",
+	}
+
+	req, err := CreateSelectRequest(context.Background(), cfg, tcr, "query")
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+
+	if req.URL.String() != "https://prod.example.com/select/logsql/query" {
+		t.Fatalf("Expected prod query URL, got %q", req.URL.String())
+	}
+	if req.Header.Get("Authorization") != "Bearer prod-token" {
+		t.Fatalf("Expected prod bearer token, got %q", req.Header.Get("Authorization"))
+	}
+	if req.Header.Get("X-Scope") != "prod" {
+		t.Fatalf("Expected prod custom header, got %q", req.Header.Get("X-Scope"))
+	}
+	if req.Header.Get("AccountID") != "2" || req.Header.Get("ProjectID") != "20" {
+		t.Fatalf("Expected prod default tenant 2:20, got %s:%s", req.Header.Get("AccountID"), req.Header.Get("ProjectID"))
+	}
+}
+
+func TestCreateAdminRequest_UsesSelectedEnvironment(t *testing.T) {
+	t.Setenv("VL_INSTANCE_ENTRYPOINT", "")
+	t.Setenv("VL_INSTANCE_BEARER_TOKEN", "")
+	t.Setenv("VL_INSTANCE_HEADERS", "")
+	t.Setenv("VL_DEFAULT_TENANT_ID", "")
+	t.Setenv("VL_ENVIRONMENTS", "demo,prod")
+	t.Setenv("VL_DEFAULT_ENVIRONMENT", "demo")
+	t.Setenv("VL_INSTANCE_DEMO_ENTRYPOINT", "https://demo.example.com")
+	t.Setenv("VL_INSTANCE_PROD_ENTRYPOINT", "https://prod.example.com")
+	t.Setenv("VL_INSTANCE_PROD_BEARER_TOKEN", "prod-token")
+	t.Setenv("VL_INSTANCE_PROD_HEADERS", "X-Scope=prod")
+
+	cfg, err := config.InitConfig()
+	if err != nil {
+		t.Fatalf("Failed to init config: %v", err)
+	}
+
+	tcr := mcp.CallToolRequest{}
+	tcr.Params.Arguments = map[string]any{
+		"env": "prod",
+	}
+
+	req, err := CreateAdminRequest(context.Background(), cfg, tcr, "flags")
+	if err != nil {
+		t.Fatalf("Failed to create admin request: %v", err)
+	}
+
+	if req.URL.String() != "https://prod.example.com/flags" {
+		t.Fatalf("Expected prod flags URL, got %q", req.URL.String())
+	}
+	if req.Header.Get("Authorization") != "Bearer prod-token" {
+		t.Fatalf("Expected prod bearer token, got %q", req.Header.Get("Authorization"))
+	}
+	if req.Header.Get("X-Scope") != "prod" {
+		t.Fatalf("Expected prod custom header, got %q", req.Header.Get("X-Scope"))
+	}
+}
+
+func TestCreateSelectRequest_UnknownEnvironment(t *testing.T) {
+	t.Setenv("VL_INSTANCE_ENTRYPOINT", "https://demo.example.com")
+	t.Setenv("VL_ENVIRONMENTS", "")
+	t.Setenv("VL_DEFAULT_ENVIRONMENT", "")
+
+	cfg, err := config.InitConfig()
+	if err != nil {
+		t.Fatalf("Failed to init config: %v", err)
+	}
+
+	tcr := mcp.CallToolRequest{}
+	tcr.Params.Arguments = map[string]any{
+		"env": "prod",
+	}
+
+	_, err = CreateSelectRequest(context.Background(), cfg, tcr, "query")
+	if err == nil {
+		t.Fatal("Expected unknown environment error, got nil")
+	}
+}
