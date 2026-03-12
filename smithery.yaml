@@ -5,27 +5,89 @@ startCommand:
   commandFunction:
     # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
     |-
-    (config) => ({
-      command: 'mcp-victorialogs',
-      args: [],
-      env: {
-        VL_INSTANCE_ENTRYPOINT: config.vlInstanceEntrypoint,
-        ...(config.vlInstanceBearerToken ? {VL_INSTANCE_BEARER_TOKEN: config.vlInstanceBearerToken} : {}),
+    (config) => {
+      const env = {};
+
+      if (config.vlEnvironments && Object.keys(config.vlEnvironments).length > 0) {
+        const environmentNames = Object.keys(config.vlEnvironments);
+        env.VL_ENVIRONMENTS = environmentNames.join(',');
+        if (config.vlDefaultEnvironment) {
+          env.VL_DEFAULT_ENVIRONMENT = config.vlDefaultEnvironment;
+        }
+
+        for (const [name, value] of Object.entries(config.vlEnvironments)) {
+          const suffix = name.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+          const prefix = `VL_INSTANCE_${suffix}_`;
+          env[`${prefix}ENTRYPOINT`] = value.entrypoint;
+          if (value.bearerToken) {
+            env[`${prefix}BEARER_TOKEN`] = value.bearerToken;
+          }
+          if (value.headers && value.headers.length > 0) {
+            env[`${prefix}HEADERS`] = value.headers.join(',');
+          }
+          if (value.defaultTenantId) {
+            env[`${prefix}DEFAULT_TENANT_ID`] = value.defaultTenantId;
+          }
+        }
+      } else {
+        env.VL_INSTANCE_ENTRYPOINT = config.vlInstanceEntrypoint;
+        if (config.vlInstanceBearerToken) {
+          env.VL_INSTANCE_BEARER_TOKEN = config.vlInstanceBearerToken;
+        }
       }
-    })
+
+      return {
+        command: 'mcp-victorialogs',
+        args: [],
+        env,
+      };
+    }
   configSchema:
     # JSON Schema defining the configuration options for the MCP.
     type: object
-    required:
-      - vlInstanceEntrypoint
     properties:
       vlInstanceEntrypoint:
         type: string
-        description: URL to VictoriaLogs instance
+        description: URL to VictoriaLogs instance in single-instance mode
       vlInstanceBearerToken:
         type: string
         default: ""
-        description: Authentication token for VictoriaLogs API
+        description: Authentication token for VictoriaLogs API in single-instance mode
+      vlDefaultEnvironment:
+        type: string
+        default: ""
+        description: Default environment used when a tool call omits env
+      vlEnvironments:
+        type: object
+        minProperties: 1
+        description: Named VictoriaLogs environments exposed by a single MCP instance
+        additionalProperties:
+          type: object
+          required:
+            - entrypoint
+          properties:
+            entrypoint:
+              type: string
+              description: URL to the VictoriaLogs instance for this environment
+            bearerToken:
+              type: string
+              default: ""
+              description: Authentication token for this environment
+            headers:
+              type: array
+              default: []
+              description: Custom headers for this environment in key=value format
+              items:
+                type: string
+            defaultTenantId:
+              type: string
+              default: ""
+              description: Default tenant ID for this environment
+    oneOf:
+      - required:
+          - vlInstanceEntrypoint
+      - required:
+          - vlEnvironments
   exampleConfig:
     vlInstanceEntrypoint: https://play-vmlogs.victoriametrics.com
     vlInstanceBearerToken: <YOUR_TOKEN_HERE>

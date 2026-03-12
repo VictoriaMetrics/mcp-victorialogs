@@ -35,11 +35,15 @@ func New(ms *metrics.Set) *server.Hooks {
 		ms.GetOrCreateCounter(`mcp_victorialogs_list_prompts_total`).Inc()
 	})
 
-	hooks.AddAfterCallTool(func(_ context.Context, _ any, message *mcp.CallToolRequest, result *mcp.CallToolResult) {
+	hooks.AddAfterCallTool(func(_ context.Context, _ any, message *mcp.CallToolRequest, result any) {
+		callResult, ok := result.(*mcp.CallToolResult)
+		if !ok || callResult == nil {
+			return
+		}
 		ms.GetOrCreateCounter(fmt.Sprintf(
 			`mcp_victorialogs_call_tool_total{name="%s",is_error="%t"}`,
 			message.Params.Name,
-			result.IsError,
+			callResult.IsError,
 		)).Inc()
 	})
 
@@ -124,11 +128,15 @@ func NewLoggerHooks() *server.Hooks {
 		)
 	})
 
-	hooks.AddAfterCallTool(func(_ context.Context, id any, msg *mcp.CallToolRequest, result *mcp.CallToolResult) {
+	hooks.AddAfterCallTool(func(_ context.Context, id any, msg *mcp.CallToolRequest, result any) {
+		callResult, ok := result.(*mcp.CallToolResult)
+		if !ok || callResult == nil {
+			return
+		}
 		slog.Info("Tool called",
 			"request_id", id,
 			"tool_name", msg.Params.Name,
-			"is_error", result.IsError,
+			"is_error", callResult.IsError,
 		)
 	})
 

@@ -1,3 +1,34 @@
+{{- $hasSingleInstanceEntrypoint := ne (trim (default "" .Values.vl.entrypoint)) "" -}}
+{{- $hasSingleInstanceConfig := $hasSingleInstanceEntrypoint -}}
+{{- if .Values.vl.bearerToken -}}
+{{- $hasSingleInstanceConfig = true -}}
+{{- end -}}
+{{- if gt (len (default (list) .Values.vl.headers)) 0 -}}
+{{- $hasSingleInstanceConfig = true -}}
+{{- end -}}
+{{- $hasMultiConfig := false -}}
+{{- range .Values.env -}}
+{{- $envName := default "" .name -}}
+{{- if eq $envName "VL_INSTANCE_ENTRYPOINT" -}}
+{{- $hasSingleInstanceEntrypoint = true -}}
+{{- $hasSingleInstanceConfig = true -}}
+{{- end -}}
+{{- if or (eq $envName "VL_INSTANCE_BEARER_TOKEN") (eq $envName "VL_INSTANCE_HEADERS") (eq $envName "VL_DEFAULT_TENANT_ID") -}}
+{{- $hasSingleInstanceConfig = true -}}
+{{- end -}}
+{{- if eq $envName "VL_ENVIRONMENTS" -}}
+{{- $hasMultiConfig = true -}}
+{{- end -}}
+{{- end -}}
+{{- if and $hasSingleInstanceConfig $hasMultiConfig -}}
+{{- fail "configure exactly one VictoriaLogs mode: either single-instance settings (vl.* or VL_INSTANCE_*) or multi-environment settings (VL_ENVIRONMENTS with VL_INSTANCE_<ENV>_*), not both" -}}
+{{- end -}}
+{{- if not (or $hasSingleInstanceEntrypoint $hasMultiConfig) -}}
+{{- fail "configure VictoriaLogs by setting either vl.entrypoint (or VL_INSTANCE_ENTRYPOINT) for single-instance mode, or VL_ENVIRONMENTS for multi-environment mode" -}}
+{{- end -}}
+{{- if and $hasSingleInstanceConfig (not $hasSingleInstanceEntrypoint) -}}
+{{- fail "single-instance settings require vl.entrypoint (or VL_INSTANCE_ENTRYPOINT)" -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -41,8 +72,10 @@ spec:
               value: "0.0.0.0:{{  .Values.service.port }}"
             - name: MCP_SERVER_MODE
               value: "{{ .Values.mcp.mode }}"
+            {{- with .Values.vl.entrypoint }}
             - name: VL_INSTANCE_ENTRYPOINT
-              value: "{{ required ".Values.vl.entrypoint should be set" .Values.vl.entrypoint }}"
+              value: "{{ . }}"
+            {{- end }}
             {{- with .Values.vl.bearerToken }}
             - name: VL_INSTANCE_BEARER_TOKEN
               {{- if kindIs "map" . }}
