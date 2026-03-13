@@ -1,6 +1,6 @@
 {{- if .Values.scrape.enabled }}
 ---
-apiVersion: operator.victorialogs.com/v1beta1
+apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMServiceScrape
 metadata:
   labels: {{ include "mcp-victorialogs.labels" . | nindent 4 }}
