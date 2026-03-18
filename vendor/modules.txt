@@ -35,7 +35,7 @@ github.com/VictoriaMetrics/VictoriaMetrics/lib/snapshot/snapshotutil
 github.com/VictoriaMetrics/VictoriaMetrics/lib/stringsutil
 github.com/VictoriaMetrics/VictoriaMetrics/lib/syncwg
 github.com/VictoriaMetrics/VictoriaMetrics/lib/timeutil
-# github.com/VictoriaMetrics/metrics v1.41.2
+# github.com/VictoriaMetrics/metrics v1.42.0
 ## explicit; go 1.24.0
 github.com/VictoriaMetrics/metrics
 # github.com/VictoriaMetrics/metricsql v0.84.8
