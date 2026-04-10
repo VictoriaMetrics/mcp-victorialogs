@@ -1,9 +1,9 @@
 # VictoriaLogs MCP Server
 
-[![Latest Release](https://img.shields.io/github/v/release/VictoriaMetrics-Community/mcp-victorialogs?sort=semver&label=&filter=!*-victorialogs&logo=github&labelColor=gray&color=gray&link=https%3A%2F%2Fgithub.com%2FVictoriaMetrics-Community%2Fmcp-victorialogs%2Freleases%2Flatest)](https://github.com/VictoriaMetrics-Community/mcp-victorialogs/releases)
-[![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/VictoriaMetrics-Community/mcp-victorialogs)](https://archestra.ai/mcp-catalog/victoriametrics-community__mcp-victorialogs)
-[![smithery badge](https://smithery.ai/badge/@VictoriaMetrics-Community/mcp-victorialogs)](https://smithery.ai/server/@VictoriaMetrics-Community/mcp-victorialogs)
-![License](https://img.shields.io/github/license/VictoriaMetrics-Community/mcp-victorialogs?labelColor=green&label=&link=https%3A%2F%2Fgithub.com%2FVictoriaMetrics-Community%2Fmcp-victorialogs%2Fblob%2Fmain%2FLICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/VictoriaMetrics/mcp-victorialogs?sort=semver&label=&filter=!*-victorialogs&logo=github&labelColor=gray&color=gray&link=https%3A%2F%2Fgithub.com%2FVictoriaMetrics%2Fmcp-victorialogs%2Freleases%2Flatest)](https://github.com/VictoriaMetrics/mcp-victorialogs/releases)
+[![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/VictoriaMetrics/mcp-victorialogs)](https://archestra.ai/mcp-catalog/victoriametrics__mcp-victorialogs)
+[![smithery badge](https://smithery.ai/badge/@VictoriaMetrics/mcp-victorialogs)](https://smithery.ai/server/@VictoriaMetrics/mcp-victorialogs)
+![License](https://img.shields.io/github/license/VictoriaMetrics/mcp-victorialogs?labelColor=green&label=&link=https%3A%2F%2Fgithub.com%2FVictoriaMetrics%2Fmcp-victorialogs%2Fblob%2Fmain%2FLICENSE)
 ![Slack](https://img.shields.io/badge/Join-4A154B?logo=slack&link=https%3A%2F%2Fslack.victoriametrics.com)
 ![X](https://img.shields.io/twitter/follow/VictoriaMetrics?style=flat&label=Follow&color=black&logo=x&labelColor=black&link=https%3A%2F%2Fx.com%2FVictoriaMetrics)
 ![Reddit](https://img.shields.io/reddit/subreddit-subscribers/VictoriaMetrics?style=flat&label=Join&labelColor=red&logoColor=white&logo=reddit&link=https%3A%2F%2Fwww.reddit.com%2Fr%2FVictoriaMetrics)
@@ -50,25 +50,25 @@ Here is example of configuration for [Claude Desktop](https://claude.ai/download
 ## Requirements
 
 - [VictoriaLogs](https://docs.victoriametrics.com/victorialogs/) instance: ([single-node](https://docs.victoriametrics.com/victorialogs/) or [cluster](https://docs.victoriametrics.com/victorialogs/cluster/))
-- Go 1.24 or higher (if you want to build from source)
+- Go 1.26 or higher (if you want to build from source)
 
 ## Installation
 
 ### Go
 
 ```bash
-go install github.com/VictoriaMetrics-Community/mcp-victorialogs/cmd/mcp-victorialogs@latest
+go install github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs@latest
 ```
 
 ### Binaries
 
-Just download the latest release from [Releases](https://github.com/VictoriaMetrics-Community/mcp-victorialogs/releases) page and put it to your PATH.
+Just download the latest release from [Releases](https://github.com/VictoriaMetrics/mcp-victorialogs/releases) page and put it to your PATH.
 
 Example for Linux x86_64 (note that other architectures and platforms are also available):
 
 ```bash
-latest=$(curl -s https://api.github.com/repos/VictoriaMetrics-Community/mcp-victorialogs/releases/latest | grep 'tag_name' | cut -d\" -f4)
-wget https://github.com/VictoriaMetrics-Community/mcp-victorialogs/releases/download/$latest/mcp-victorialogs_Linux_x86_64.tar.gz
+latest=$(curl -s https://api.github.com/repos/VictoriaMetrics/mcp-victorialogs/releases/latest | grep 'tag_name' | cut -d\" -f4)
+wget https://github.com/VictoriaMetrics/mcp-victorialogs/releases/download/$latest/mcp-victorialogs_Linux_x86_64.tar.gz
 tar axvf mcp-victorialogs_Linux_x86_64.tar.gz
 ```
 
@@ -84,7 +84,7 @@ docker run -d --name mcp-victorialogs \
   -e MCP_SERVER_MODE=http \
   -e MCP_LISTEN_ADDR=:8081 \
   -p 8081:8081 \
-  ghcr.io/victoriametrics-community/mcp-victorialogs
+  ghcr.io/victoriametrics/mcp-victorialogs
 ```
 
 You should replace environment variables with your own parameters.
@@ -92,7 +92,7 @@ You should replace environment variables with your own parameters.
 Note that the `MCP_SERVER_MODE=http` flag is used to enable Streamable HTTP mode. 
 More details about server modes can be found in the [Configuration](#configuration) section.
 
-See available docker images in [github registry](https://github.com/orgs/VictoriaMetrics-Community/packages/container/package/mcp-victorialogs).
+See available docker images in [github registry](https://github.com/orgs/VictoriaMetrics/packages/container/package/mcp-victorialogs).
 
 Also see [Using Docker instead of binary](#using-docker-instead-of-binary) section for more details about using Docker with MCP server with clients in stdio mode.
 
@@ -104,7 +104,7 @@ For building binary from source code you can use the following approach:
 - Clone repo:
 
   ```bash
-  git clone https://github.com/VictoriaMetrics-Community/mcp-victorialogs.git
+  git clone https://github.com/VictoriaMetrics/mcp-victorialogs.git
   cd mcp-victorialogs
   ```
 - Build binary from cloned source code:
@@ -122,7 +122,7 @@ For building binary from source code you can use the following approach:
 
 ### Smithery
 
-To install VictoriaLogs MCP Server for your client automatically via [Smithery](https://smithery.ai/server/@VictoriaMetrics-Community/mcp-victorialogs), yo can use the following commands:
+To install VictoriaLogs MCP Server for your client automatically via [Smithery](https://smithery.ai/server/@VictoriaMetrics/mcp-victorialogs), yo can use the following commands:
 
 ```bash
 # Get the list of supported MCP clients
@@ -141,7 +141,7 @@ npx -y @smithery/cli list clients
 #  amazon-bedrock
 
 # Install VictoriaLogs MCP server for your client
-npx -y @smithery/cli install @VictoriaMetrics-Community/mcp-victorialogs --client <YOUR-CLIENT-NAME>
+npx -y @smithery/cli install @VictoriaMetrics/mcp-victorialogs --client <YOUR-CLIENT-NAME>
 # and follow the instructions
 ```
 
@@ -366,7 +366,7 @@ You should replace run command in configuration examples above in the following 
           "-e", "VL_INSTANCE_ENTRYPOINT",
           "-e", "VL_INSTANCE_BEARER_TOKEN",
           "-e", "VL_INSTANCE_HEADERS",
-          "ghcr.io/victoriametrics-community/mcp-victorialogs",
+          "ghcr.io/victoriametrics/mcp-victorialogs",
         ],
       "env": {
         "VL_INSTANCE_ENTRYPOINT": "<YOUR_VL_INSTANCE>",

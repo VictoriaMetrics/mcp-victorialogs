@@ -10,7 +10,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/VictoriaMetrics-Community/mcp-victorialogs/cmd/mcp-victorialogs/config"
+	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/config"
 )
 
 // TestGetTextBodyForRequest tests the GetTextBodyForRequest function
