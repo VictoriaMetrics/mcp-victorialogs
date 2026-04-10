@@ -127,6 +127,7 @@ MCP Server for VictoriaLogs is configured via environment variables:
 | `VL_INSTANCE_ENTRYPOINT`   | URL to VictoriaLogs instance                                                                                                                                                                                                                                        | Yes      | -                | -                                |
 | `VL_INSTANCE_BEARER_TOKEN` | Authentication token for VictoriaLogs API                                                                                                                                                                                                                           | No       | -                | -                                |
 | `VL_INSTANCE_HEADERS`      | Custom HTTP headers to send with requests (comma-separated key=value pairs)                                                                                                                                                                                         | No       | -                | -                                |
+| `MCP_PASSTHROUGH_HEADERS`  | HTTP header names to forward from incoming MCP requests to VictoriaLogs (comma-separated list). Overrides `VL_INSTANCE_HEADERS` on collision. Only applies in `sse`/`http` modes.                                                                                   | No       | -                | -                                |
 | `VL_DEFAULT_TENANT_ID`     | Default tenant ID used when tenant is not specified in requests (format: `AccountID:ProjectID` or `AccountID`)                                                                                                                                                      | No       | `0:0`            | -                                |
 | `MCP_SERVER_MODE`          | Server operation mode. See [Modes](#modes) for details.                                                                                                                                                                                                             | No       | `stdio`          | `stdio`, `sse`, `http`           |
 | `MCP_LISTEN_ADDR`          | Address for SSE or HTTP server to listen on                                                                                                                                                                                                                         | No       | `localhost:8081` | -                                |
@@ -157,6 +158,9 @@ export VL_INSTANCE_ENTRYPOINT="https://play-vmlogs.victoriametrics.com"
 # Custom headers for authentication (e.g., behind a reverse proxy)
 # Expected syntax is key=value separated by commas
 export VL_INSTANCE_HEADERS="<HEADER>=<HEADER_VALUE>,<HEADER>=<HEADER_VALUE>"
+
+# Forward specific headers from incoming MCP requests to VictoriaLogs
+export MCP_PASSTHROUGH_HEADERS="X-Token,X-Access-Key"
 
 # Server mode
 export MCP_SERVER_MODE="sse"
