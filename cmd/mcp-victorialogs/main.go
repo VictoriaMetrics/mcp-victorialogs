@@ -88,8 +88,6 @@ Try not to second guess information - if you don't know something or lack inform
 	`),
 	)
 
-	resources.RegisterDocsResources(s, c)
-
 	tools.RegisterToolHits(s, c)
 	tools.RegisterToolFlags(s, c)
 	tools.RegisterToolQuery(s, c)
@@ -103,6 +101,11 @@ Try not to second guess information - if you don't know something or lack inform
 	tools.RegisterToolStreamFieldNames(s, c)
 	tools.RegisterToolStreamFieldValues(s, c)
 	tools.RegisterToolDocumentation(s, c)
+
+	// Registering resources (only if documentation tool is not disabled)
+	if !c.IsToolDisabled(tools.ToolNameDocumentation) {
+		resources.RegisterDocsResources(s, c)
+	}
 
 	prompts.RegisterPromptDocumentation(s, c)
 
