@@ -11,14 +11,15 @@ import (
 )
 
 type Config struct {
-	serverMode        string
-	listenAddr        string
-	entrypoint        string
-	bearerToken       string
-	customHeaders     map[string]string
-	disabledTools     map[string]bool
-	heartbeatInterval time.Duration
-	defaultTenantID   logstorage.TenantID
+	serverMode         string
+	listenAddr         string
+	entrypoint         string
+	bearerToken        string
+	customHeaders      map[string]string
+	passthroughHeaders []string
+	disabledTools      map[string]bool
+	heartbeatInterval  time.Duration
+	defaultTenantID    logstorage.TenantID
 
 	entryPointURL *url.URL
 
@@ -57,6 +58,17 @@ func InitConfig() (*Config, error) {
 		}
 	}
 
+	var passthroughHeaders []string
+	passthroughHeadersStr := os.Getenv("MCP_PASSTHROUGH_HEADERS")
+	if passthroughHeadersStr != "" {
+		for _, h := range strings.Split(passthroughHeadersStr, ",") {
+			h = strings.TrimSpace(h)
+			if h != "" {
+				passthroughHeaders = append(passthroughHeaders, h)
+			}
+		}
+	}
+
 	heartbeatInterval := 30 * time.Second
 	heartbeatIntervalStr := os.Getenv("MCP_HEARTBEAT_INTERVAL")
 	if heartbeatIntervalStr != "" {
@@ -87,16 +99,17 @@ func InitConfig() (*Config, error) {
 	}
 
 	result := &Config{
-		serverMode:        strings.ToLower(os.Getenv("MCP_SERVER_MODE")),
-		listenAddr:        os.Getenv("MCP_LISTEN_ADDR"),
-		entrypoint:        os.Getenv("VL_INSTANCE_ENTRYPOINT"),
-		bearerToken:       os.Getenv("VL_INSTANCE_BEARER_TOKEN"),
-		customHeaders:     customHeadersMap,
-		disabledTools:     disabledToolsMap,
-		heartbeatInterval: heartbeatInterval,
-		logFormat:         logFormat,
-		logLevel:          logLevel,
-		defaultTenantID:   logstorage.TenantID{AccountID: 0, ProjectID: 0},
+		serverMode:         strings.ToLower(os.Getenv("MCP_SERVER_MODE")),
+		listenAddr:         os.Getenv("MCP_LISTEN_ADDR"),
+		entrypoint:         os.Getenv("VL_INSTANCE_ENTRYPOINT"),
+		bearerToken:        os.Getenv("VL_INSTANCE_BEARER_TOKEN"),
+		customHeaders:      customHeadersMap,
+		passthroughHeaders: passthroughHeaders,
+		disabledTools:      disabledToolsMap,
+		heartbeatInterval:  heartbeatInterval,
+		logFormat:          logFormat,
+		logLevel:           logLevel,
+		defaultTenantID:    logstorage.TenantID{AccountID: 0, ProjectID: 0},
 	}
 	// Left for backward compatibility
 	if result.listenAddr == "" {
@@ -172,6 +185,10 @@ func (c *Config) HeartbeatInterval() time.Duration {
 
 func (c *Config) CustomHeaders() map[string]string {
 	return c.customHeaders
+}
+
+func (c *Config) PassthroughHeaders() []string {
+	return c.passthroughHeaders
 }
 
 func (c *Config) LogFormat() string {
