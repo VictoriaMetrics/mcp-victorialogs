@@ -10,7 +10,7 @@ import (
 	"github.com/VictoriaMetrics/VictoriaLogs/lib/logstorage"
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/VictoriaMetrics-Community/mcp-victorialogs/cmd/mcp-victorialogs/config"
+	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/config"
 )
 
 func CreateSelectRequest(ctx context.Context, cfg *config.Config, tcr mcp.CallToolRequest, path ...string) (*http.Request, error) {

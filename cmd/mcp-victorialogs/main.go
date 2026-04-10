@@ -18,12 +18,12 @@ import (
 
 	"github.com/VictoriaMetrics/metrics"
 
-	"github.com/VictoriaMetrics-Community/mcp-victorialogs/cmd/mcp-victorialogs/config"
-	"github.com/VictoriaMetrics-Community/mcp-victorialogs/cmd/mcp-victorialogs/hooks"
-	"github.com/VictoriaMetrics-Community/mcp-victorialogs/cmd/mcp-victorialogs/logging"
-	"github.com/VictoriaMetrics-Community/mcp-victorialogs/cmd/mcp-victorialogs/prompts"
-	"github.com/VictoriaMetrics-Community/mcp-victorialogs/cmd/mcp-victorialogs/resources"
-	"github.com/VictoriaMetrics-Community/mcp-victorialogs/cmd/mcp-victorialogs/tools"
+	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/config"
+	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/hooks"
+	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/logging"
+	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/prompts"
+	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/resources"
+	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/tools"
 )
 
 var (

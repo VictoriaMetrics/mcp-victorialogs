@@ -7,8 +7,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/VictoriaMetrics-Community/mcp-victorialogs/cmd/mcp-victorialogs/config"
-	"github.com/VictoriaMetrics-Community/mcp-victorialogs/cmd/mcp-victorialogs/resources"
+	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/config"
+	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/resources"
 )
 
 const toolNameDocumentation = "documentation"

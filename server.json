@@ -1,17 +1,17 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
-  "name": "io.github.VictoriaMetrics-Community/mcp-victorialogs",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.VictoriaMetrics/mcp-victorialogs",
   "description": "MCP Server for VictoriaLogs. Provides integration with VictoriaLogs API and documentation",
   "status": "active",
   "repository": {
-    "url": "https://github.com/VictoriaMetrics-Community/mcp-victorialogs",
+    "url": "https://github.com/VictoriaMetrics/mcp-victorialogs",
     "source": "github"
   },
   "version": "${VERSION}",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/victoriametrics-community/mcp-victorialogs:${VERSION}",
+      "identifier": "ghcr.io/victoriametrics/mcp-victorialogs:${VERSION}",
       "transport": {
         "type": "stdio"
       },

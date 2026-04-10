@@ -44,7 +44,7 @@ changelog:
 
 dockers_v2:
   - images:
-      - "ghcr.io/victoriametrics-community/mcp-victorialogs"
+      - "ghcr.io/victoriametrics/mcp-victorialogs"
     tags:
       - latest
       - "{{ .Version }}"
@@ -59,7 +59,7 @@ dockers_v2:
       "org.opencontainers.image.created": "{{.Date}}"
       "org.opencontainers.image.revision": "{{.FullCommit}}"
       "org.opencontainers.image.licenses": "Apache-2.0"
-      "io.modelcontextprotocol.server.name": "io.github.VictoriaMetrics-Community/mcp-victorialogs"
+      "io.modelcontextprotocol.server.name": "io.github.VictoriaMetrics/mcp-victorialogs"
     annotations:
       "project": "{{.ProjectName}}"
     platforms:

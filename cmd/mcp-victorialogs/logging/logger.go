@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/VictoriaMetrics-Community/mcp-victorialogs/cmd/mcp-victorialogs/config"
+	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/config"
 )
 
 // Logger wraps log.Logger and implements util.Logger interface
