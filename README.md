@@ -1,8 +1,6 @@
 # VictoriaLogs MCP Server
 
 [![Latest Release](https://img.shields.io/github/v/release/VictoriaMetrics/mcp-victorialogs?sort=semver&label=&filter=!*-victorialogs&logo=github&labelColor=gray&color=gray&link=https%3A%2F%2Fgithub.com%2FVictoriaMetrics%2Fmcp-victorialogs%2Freleases%2Flatest)](https://github.com/VictoriaMetrics/mcp-victorialogs/releases)
-[![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/VictoriaMetrics/mcp-victorialogs)](https://archestra.ai/mcp-catalog/victoriametrics__mcp-victorialogs)
-[![smithery badge](https://smithery.ai/badge/@VictoriaMetrics/mcp-victorialogs)](https://smithery.ai/server/@VictoriaMetrics/mcp-victorialogs)
 ![License](https://img.shields.io/github/license/VictoriaMetrics/mcp-victorialogs?labelColor=green&label=&link=https%3A%2F%2Fgithub.com%2FVictoriaMetrics%2Fmcp-victorialogs%2Fblob%2Fmain%2FLICENSE)
 ![Slack](https://img.shields.io/badge/Join-4A154B?logo=slack&link=https%3A%2F%2Fslack.victoriametrics.com)
 ![X](https://img.shields.io/twitter/follow/VictoriaMetrics?style=flat&label=Follow&color=black&logo=x&labelColor=black&link=https%3A%2F%2Fx.com%2FVictoriaMetrics)
@@ -120,47 +118,22 @@ For building binary from source code you can use the following approach:
   # after that you can use docker image mcp-victorialogs for running or pushing
   ```
 
-### Smithery
-
-To install VictoriaLogs MCP Server for your client automatically via [Smithery](https://smithery.ai/server/@VictoriaMetrics/mcp-victorialogs), yo can use the following commands:
-
-```bash
-# Get the list of supported MCP clients
-npx -y @smithery/cli list clients
-#Available clients:
-#  claude
-#  cline
-#  windsurf
-#  roocode
-#  witsy
-#  enconvo
-#  cursor
-#  vscode
-#  vscode-insiders
-#  boltai
-#  amazon-bedrock
-
-# Install VictoriaLogs MCP server for your client
-npx -y @smithery/cli install @VictoriaMetrics/mcp-victorialogs --client <YOUR-CLIENT-NAME>
-# and follow the instructions
-```
-
 ## Configuration
 
 MCP Server for VictoriaLogs is configured via environment variables:
 
-| Variable                   | Description                                             | Required | Default          | Allowed values         |
-|----------------------------|---------------------------------------------------------|----------|------------------|------------------------|
-| `VL_INSTANCE_ENTRYPOINT`   | URL to VictoriaLogs instance                            | Yes      | -                | -                      |
-| `VL_INSTANCE_BEARER_TOKEN` | Authentication token for VictoriaLogs API               | No       | -                | -                      |
-| `VL_INSTANCE_HEADERS`      | Custom HTTP headers to send with requests (comma-separated key=value pairs) | No       | -                | -                      |
-| `VL_DEFAULT_TENANT_ID`     | Default tenant ID used when tenant is not specified in requests (format: `AccountID:ProjectID` or `AccountID`) | No       | `0:0`            | -                      |
-| `MCP_SERVER_MODE`          | Server operation mode. See [Modes](#modes) for details. | No       | `stdio`          | `stdio`, `sse`, `http` |
-| `MCP_LISTEN_ADDR`          | Address for SSE or HTTP server to listen on             | No       | `localhost:8081` | -                      |
-| `MCP_DISABLED_TOOLS`       | Comma-separated list of tools to disable                | No       | -                | -                      |
-| `MCP_HEARTBEAT_INTERVAL`   | Defines the heartbeat interval for the streamable-http protocol. <br /> It means the MCP server will send a heartbeat to the client through the GET connection, <br /> to keep the connection alive from being closed by the network infrastructure (e.g. gateways) | No       | `30s`            | -                      |
-| `MCP_LOG_FORMAT`           | Log output format                                                                                                                                                                                                                                                      | No       | `text`           | `text`, `json`         |
-| `MCP_LOG_LEVEL`            | Minimum log level                                                                                                                                                                                                                                                      | No       | `info`           | `debug`, `info`, `warn`, `error` |
+| Variable                   | Description                                                                                                                                                                                                                                                         | Required | Default          | Allowed values                   |
+|----------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|------------------|----------------------------------|
+| `VL_INSTANCE_ENTRYPOINT`   | URL to VictoriaLogs instance                                                                                                                                                                                                                                        | Yes      | -                | -                                |
+| `VL_INSTANCE_BEARER_TOKEN` | Authentication token for VictoriaLogs API                                                                                                                                                                                                                           | No       | -                | -                                |
+| `VL_INSTANCE_HEADERS`      | Custom HTTP headers to send with requests (comma-separated key=value pairs)                                                                                                                                                                                         | No       | -                | -                                |
+| `VL_DEFAULT_TENANT_ID`     | Default tenant ID used when tenant is not specified in requests (format: `AccountID:ProjectID` or `AccountID`)                                                                                                                                                      | No       | `0:0`            | -                                |
+| `MCP_SERVER_MODE`          | Server operation mode. See [Modes](#modes) for details.                                                                                                                                                                                                             | No       | `stdio`          | `stdio`, `sse`, `http`           |
+| `MCP_LISTEN_ADDR`          | Address for SSE or HTTP server to listen on                                                                                                                                                                                                                         | No       | `localhost:8081` | -                                |
+| `MCP_DISABLED_TOOLS`       | Comma-separated list of tools to disable                                                                                                                                                                                                                            | No       | -                | -                                |
+| `MCP_HEARTBEAT_INTERVAL`   | Defines the heartbeat interval for the streamable-http protocol. <br /> It means the MCP server will send a heartbeat to the client through the GET connection, <br /> to keep the connection alive from being closed by the network infrastructure (e.g. gateways) | No       | `30s`            | -                                |
+| `MCP_LOG_FORMAT`           | Log output format                                                                                                                                                                                                                                                   | No       | `text`           | `text`, `json`                   |
+| `MCP_LOG_LEVEL`            | Minimum log level                                                                                                                                                                                                                                                   | No       | `info`           | `debug`, `info`, `warn`, `error` |
 
 ### Modes
 
@@ -259,6 +232,41 @@ claude mcp add victorialogs -- /path/to/mcp-victorialogs \
 ```
 
 See [Claude Code MCP docs](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/tutorials#set-up-model-context-protocol-mcp) for more info.
+
+### Codex
+
+Codex CLI and the IDE extension use the same MCP configuration file: `~/.codex/config.toml`
+(or `.codex/config.toml` in a trusted project).
+
+Run the command:
+
+```sh
+codex mcp add victorialogs \
+  --env VL_INSTANCE_ENTRYPOINT=<YOUR_VL_INSTANCE> \
+  --env VL_INSTANCE_BEARER_TOKEN=<YOUR_VL_BEARER_TOKEN> \
+  --env VL_INSTANCE_HEADERS="<HEADER>=<HEADER_VALUE>,<HEADER>=<HEADER_VALUE>" \
+  -- /path/to/mcp-victorialogs
+```
+
+Or add the following to your Codex `~/.codex/config.toml` file:
+
+```toml
+[mcp_servers.victorialogs]
+command = "/path/to/mcp-victorialogs"
+
+[mcp_servers.victorialogs.env]
+VL_INSTANCE_ENTRYPOINT = "<YOUR_VL_INSTANCE>"
+VL_INSTANCE_BEARER_TOKEN = "<YOUR_VL_BEARER_TOKEN>"
+VL_INSTANCE_HEADERS = "<HEADER>=<HEADER_VALUE>,<HEADER>=<HEADER_VALUE>"
+```
+
+If you run the server in Streamable HTTP mode, you can register it with:
+
+```sh
+codex mcp add victorialogs --url http://localhost:8081/mcp
+```
+
+See [Codex MCP docs](https://developers.openai.com/codex/mcp) for more info.
 
 ### Visual Studio Code
 
