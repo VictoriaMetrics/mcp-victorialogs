@@ -19,8 +19,11 @@ This MCP server allows you to use almost all read-only APIs of VictoriaLogs, i.e
 - Showing parameters of your VictoriaLogs instance
 - Listing available streams, fields, field values
 - Query statistics for the logs as metrics
+- UI with setup instructions and tools inspection on the root endpoint (only in Streamable HTTP mode)
  
 In addition, the MCP server contains embedded up-to-date documentation and is able to search it without online access.
+
+![image](./ui.png)
 
 More details about the exact available tools and prompts can be found in the [Usage](#usage) section.
 
@@ -174,6 +177,7 @@ In SSE and HTTP modes the MCP server provides the following endpoints:
 
 | Endpoint            | Description                                                                                      |
 |---------------------|--------------------------------------------------------------------------------------------------|
+| `/`                 | Landing page with setup help and tool inspection (HTTP mode only)                                |
 | `/sse` + `/message` | Endpoints for messages in SSE mode (for MCP clients that support SSE)                            |
 | `/mcp`              | HTTP endpoint for streaming messages in HTTP mode (for MCP clients that support Streamable HTTP) |
 | `/metrics`          | Metrics in Prometheus format for monitoring the MCP server                                       |

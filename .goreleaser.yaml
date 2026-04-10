@@ -1,6 +1,10 @@
 version: 2
 project_name: mcp-victorialogs
 
+before:
+  hooks:
+    - make ui-build
+
 builds:
   - env:
       - CGO_ENABLED=0
@@ -13,7 +17,7 @@ builds:
       - arm64
       - arm
       - "386"
-    main: ./cmd/mcp-victorialogs/main.go
+    main: ./cmd/mcp-victorialogs
     binary: mcp-victorialogs
     ldflags:
       - -X main.version={{.Version}} -X main.date={{ .CommitDate }}

@@ -6,15 +6,18 @@ FROM golang:1.26-alpine AS builder
 WORKDIR /app
 
 # Install Git for potential dependencies and ca-certificates
-RUN apk add --no-cache git ca-certificates
+RUN apk add --no-cache git ca-certificates nodejs npm
 
 # Copy source
 COPY go.mod go.sum ./
 COPY . .
 
+# Build UI
+RUN cd web && npm install && npm run build
+
 # Download dependencies and build
 RUN go mod download
-RUN go build -o mcp-victorialogs cmd/mcp-victorialogs/main.go
+RUN go build -o mcp-victorialogs ./cmd/mcp-victorialogs
 
 # Runtime stage
 FROM alpine:latest
