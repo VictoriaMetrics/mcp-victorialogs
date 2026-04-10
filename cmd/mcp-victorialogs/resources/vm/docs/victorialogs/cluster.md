@@ -12,6 +12,7 @@ tags:
   - guide
 aliases:
 - /victorialogs/cluster/
+- /victorialogs/cluster-victorialogs
 ---
 
 Cluster mode in VictoriaLogs provides horizontal scaling to many nodes when [single-node VictoriaLogs](https://docs.victoriametrics.com/victorialogs/)
@@ -130,50 +131,8 @@ while queries return full responses from the remaining AZ. When the AZ becomes a
 can be used for querying full responses. This HA scheme can be built with the help of [vlagent](https://docs.victoriametrics.com/victorialogs/vlagent/)
 for data replication and buffering, and [vmauth](https://docs.victoriametrics.com/victoriametrics/vmauth/) for data querying:
 
-```mermaid
-flowchart TB
-  subgraph haSolution["HA Solution"]
-    direction TB
-
-    subgraph ingestion["Ingestion Layer"]
-      direction TB
-      LS["Log Sources<br/>(Applications)"]
-      VLAGENT["Log Collector<br/>• Buffering<br/>• Replication<br/>• Delivery Guarantees"]
-      LS --> VLAGENT
-    end
-
-    subgraph storage["Storage Layer"]
-      direction TB
-
-      subgraph zoneA["Zone A"]
-        VLA["VictoriaLogs Cluster A"]
-      end
-
-      subgraph zoneB["Zone B"]
-        VLB["VictoriaLogs Cluster B"]
-      end
-
-      VLAGENT -->|"Replicate logs to<br/>Zone A cluster"| VLA
-      VLAGENT -->|"Replicate logs to<br/>Zone B cluster"| VLB
-    end
-
-    subgraph query["Query Layer"]
-      direction TB
-      LB["Load Balancer<br/>(vmauth)<br/>• Health Checks<br/>• Failover<br/>• Query Distribution"]
-      QC["Query Clients<br/>(Grafana, API)"]
-      VLA -->|"Serve queries from<br/>Zone A cluster"| LB
-      VLB -->|"Serve queries from<br/>Zone B cluster"| LB
-      LB --> QC
-    end
-  end
-
-style VLAGENT fill:#9bc7e4
-style VLA fill:#ae9be4
-style VLB fill:#ae9be4
-style LB fill:#9bc7e4
-style QC fill:#9fe49b
-style LS fill:#9fe49b
-```
+![cluster-ha.webp](cluster-ha.webp)
+{width="600"}
 
 - [vlagent](https://docs.victoriametrics.com/victorialogs/vlagent/) receives and replicates logs to two VictoriaLogs clusters.
   If one cluster becomes unavailable, the log shipper continues sending logs to the remaining healthy cluster. It also buffers logs that cannot be delivered to the unavailable cluster.
@@ -235,8 +194,8 @@ must be used in front of `vlinsert` and `vlselect` for authorizing access to the
 See [Security and Load balancing docs](https://docs.victoriametrics.com/victorialogs/security-and-lb/).
 
 It is possible to disallow access to `/internal/insert` and `/internal/select/*` endpoints at a single-node VictoriaLogs instance
-by running it with `-internalinsert.disable` and `-internalselect.disable` command-line flags. Note that [`vlagent`](https://docs.victoriametrics.com/victorialogs/vlagent/)
-sends the collected logs to the `/internal/insert` endpoint, so it should be available for data ingestion if you use `vlagent`.
+by running it with `-internalinsert.disable` and `-internalselect.disable` command-line flags.
+The `-insert.disable` and `-select.disable` flags are broader than `-internalinsert.disable` and `-internalselect.disable`: they disable both the public and the corresponding internal endpoints.
 
 ### TLS
 
@@ -274,7 +233,7 @@ Another option is to use third-party HTTP proxies such as [vmauth](https://docs.
 between VictoriaLogs cluster components over untrusted networks.
 
 By default, all the components (vlinsert, vlselect, vlstorage) support all the HTTP endpoints including `/insert/*` and `/select/*`.
-It is recommended to disable select endpoints on `vlinsert` and insert endpoints on `vlselect`:
+It is recommended to disable select endpoints on dedicated `vlinsert` nodes and insert endpoints on dedicated `vlselect` nodes:
 
 ```sh
 # Disable select endpoints on vlinsert
@@ -347,13 +306,13 @@ The following topics for are covered below:
 - How to ingest logs into the cluster.
 - How to query the ingested logs.
 
-If you want running VictoriaLogs cluster in Kubernetes, then please read [these docs](https://docs.victoriametrics.com/helm/victorialogs-cluster/).
+If you want running VictoriaLogs cluster in Kubernetes, then please read [these docs](https://docs.victoriametrics.com/helm/victoria-logs-cluster/).
 
 Download and unpack the latest VictoriaLogs release:
 
 ```sh
-curl -L -O https://github.com/VictoriaMetrics/VictoriaLogs/releases/download/v1.41.0/victoria-logs-linux-amd64-v1.41.0.tar.gz
-tar xzf victoria-logs-linux-amd64-v1.41.0.tar.gz
+curl -L -O https://github.com/VictoriaMetrics/VictoriaLogs/releases/download/v1.49.0/victoria-logs-linux-amd64-v1.49.0.tar.gz
+tar xzf victoria-logs-linux-amd64-v1.49.0.tar.gz
 ```
 
 Start the first [`vlstorage` node](https://docs.victoriametrics.com/victorialogs/cluster/#architecture), which accepts incoming requests at the port `9491` and stores the ingested logs in the `victoria-logs-data-1` directory:
