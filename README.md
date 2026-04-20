@@ -151,7 +151,7 @@ MCP Server supports the following modes of operation (transports):
 - `sse` - Server-Sent Events. Server will expose the `/sse` and `/message` endpoints for SSE connections.
 - `http` - Streamable HTTP. Server will expose the `/mcp` endpoint for HTTP connections.
 
-More info about traqnsports you can find in MCP docs:
+More info about transports you can find in MCP docs:
 
 - [Core concepts -> Transports](https://modelcontextprotocol.io/docs/concepts/transports)
 - [Specifications -> Transports](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports)
