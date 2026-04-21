@@ -23,6 +23,8 @@ type Config struct {
 
 	entryPointURL *url.URL
 
+	tlsSkipVerify bool
+
 	// Logging configuration
 	logFormat string
 	logLevel  string
@@ -98,6 +100,8 @@ func InitConfig() (*Config, error) {
 		return nil, fmt.Errorf("MCP_LOG_LEVEL must be 'debug', 'info', 'warn' or 'error'")
 	}
 
+	tlsSkipVerify := strings.ToLower(strings.TrimSpace(os.Getenv("VL_INSTANCE_TLS_SKIP_VERIFY"))) == "true"
+
 	result := &Config{
 		serverMode:         strings.ToLower(os.Getenv("MCP_SERVER_MODE")),
 		listenAddr:         os.Getenv("MCP_LISTEN_ADDR"),
@@ -110,6 +114,7 @@ func InitConfig() (*Config, error) {
 		logFormat:          logFormat,
 		logLevel:           logLevel,
 		defaultTenantID:    logstorage.TenantID{AccountID: 0, ProjectID: 0},
+		tlsSkipVerify:      tlsSkipVerify,
 	}
 	// Left for backward compatibility
 	if result.listenAddr == "" {
@@ -197,6 +202,10 @@ func (c *Config) LogFormat() string {
 
 func (c *Config) LogLevel() string {
 	return c.logLevel
+}
+
+func (c *Config) TLSSkipVerify() bool {
+	return c.tlsSkipVerify
 }
 
 func (c *Config) DefaultTenantID() logstorage.TenantID {

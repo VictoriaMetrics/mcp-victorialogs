@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
@@ -48,6 +49,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("FATAL: Failed to initialize logger: %v\n", err)
 		return
+	}
+
+	if c.TLSSkipVerify() {
+		slog.Warn("TLS certificate verification is disabled (VL_INSTANCE_TLS_SKIP_VERIFY=true). Do not use in production.")
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec
+		http.DefaultTransport = transport
 	}
 
 	if !c.IsStdio() {
