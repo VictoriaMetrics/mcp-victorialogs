@@ -4,8 +4,8 @@ github.com/VictoriaMetrics/VictoriaLogs v1.47.1-0.20260225221819-a408207c2242 h1
 github.com/VictoriaMetrics/VictoriaLogs v1.47.1-0.20260225221819-a408207c2242/go.mod h1:AVxOS2a/aVuzsCfmJl7GuftsjYPL6UOuiLRA4KsnlUo=
 github.com/VictoriaMetrics/VictoriaMetrics v1.136.1-0.20260225205418-cd2026e4308c h1:MaS46VzH9KClnKb2SQ5v9AwfcBA1SXgWL8h/n7EFqxE=
 github.com/VictoriaMetrics/VictoriaMetrics v1.136.1-0.20260225205418-cd2026e4308c/go.mod h1:U2XhguLRd9YaLIjKEmkUDblPfD/ljUmHeWkAGMnrtoI=
-github.com/VictoriaMetrics/metrics v1.43.1 h1:j3Ba4l2K1q3pkvzPqt6aSiQ2DBlAEj3VPVeBtpR3t/Y=
-github.com/VictoriaMetrics/metrics v1.43.1/go.mod h1:xDM82ULLYCYdFRgQ2JBxi8Uf1+8En1So9YUwlGTOqTc=
+github.com/VictoriaMetrics/metrics v1.43.2 h1:+8pIQEGwchKS5CYFyvv3LKvNXGi7baZ9hmIV4RHqibY=
+github.com/VictoriaMetrics/metrics v1.43.2/go.mod h1:xDM82ULLYCYdFRgQ2JBxi8Uf1+8En1So9YUwlGTOqTc=
 github.com/VictoriaMetrics/metricsql v0.85.0 h1:xI+EfqsOgY0T2yd7p8hcYQ52LOtf+1i8fQQzQ+RGtZM=
 github.com/VictoriaMetrics/metricsql v0.85.0/go.mod h1:d4EisFO6ONP/HIGDYTAtwrejJBBeKGQYiRl095bS4QQ=
 github.com/bits-and-blooms/bitset v1.24.4 h1:95H15Og1clikBrKr/DuzMXkQzECs1M6hhoGXLwLQOZE=
