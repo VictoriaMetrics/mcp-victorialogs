@@ -280,6 +280,29 @@ codex mcp add victorialogs --url http://localhost:8081/mcp
 
 See [Codex MCP docs](https://developers.openai.com/codex/mcp) for more info.
 
+### OpenCode
+
+Add the following to your OpenCode config file in `~/.config/opencode/opencode.json`:
+
+```json
+{
+  "mcp": {
+    "victorialogs": {
+      "type": "local",
+      "command": ["/path/to/mcp-victorialogs"],
+      "enabled": true,
+      "environment": {
+        "VL_INSTANCE_ENTRYPOINT": "<YOUR_VL_INSTANCE>",
+        "VL_INSTANCE_BEARER_TOKEN": "<YOUR_VL_BEARER_TOKEN>",
+        "VL_INSTANCE_HEADERS": "<HEADER>=<HEADER_VALUE>,<HEADER>=<HEADER_VALUE>"
+      }
+    }
+  }
+}
+```
+
+See [OpenCode MCP docs](https://opencode.ai/docs/mcp-servers/) for more info.
+
 ### Visual Studio Code
 
 Add this to your VS Code MCP config file:
