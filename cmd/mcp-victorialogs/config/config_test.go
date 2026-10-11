@@ -1,8 +1,17 @@
 package config
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
+	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -16,6 +25,8 @@ func TestInitConfig(t *testing.T) {
 	originalHeartbeatInterval := os.Getenv("MCP_HEARTBEAT_INTERVAL")
 	originalDefaultTenantID := os.Getenv("VL_DEFAULT_TENANT_ID")
 	originalPassthroughHeaders := os.Getenv("MCP_PASSTHROUGH_HEADERS")
+	originalTLSInsecureSkipVerify := os.Getenv("VL_INSTANCE_TLS_INSECURE_SKIP_VERIFY")
+	originalTLSCAFile := os.Getenv("VL_INSTANCE_TLS_CA_FILE")
 
 	// Restore environment variables after test
 	defer func() {
@@ -26,6 +37,8 @@ func TestInitConfig(t *testing.T) {
 		os.Setenv("MCP_HEARTBEAT_INTERVAL", originalHeartbeatInterval)
 		os.Setenv("VL_DEFAULT_TENANT_ID", originalDefaultTenantID)
 		os.Setenv("MCP_PASSTHROUGH_HEADERS", originalPassthroughHeaders)
+		os.Setenv("VL_INSTANCE_TLS_INSECURE_SKIP_VERIFY", originalTLSInsecureSkipVerify)
+		os.Setenv("VL_INSTANCE_TLS_CA_FILE", originalTLSCAFile)
 	}()
 
 	// Test case 1: Valid configuration
@@ -379,4 +392,180 @@ func TestInitConfig(t *testing.T) {
 			}
 		}
 	})
+
+	// Test case: TLS settings are not configured
+	t.Run("TLS default settings", func(t *testing.T) {
+		os.Setenv("VL_INSTANCE_ENTRYPOINT", "https://example.com")
+		os.Setenv("VL_INSTANCE_TLS_INSECURE_SKIP_VERIFY", "")
+		os.Setenv("VL_INSTANCE_TLS_CA_FILE", "")
+
+		cfg, err := InitConfig()
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+
+		if cfg.TLSInsecureSkipVerify() {
+			t.Error("Expected TLSInsecureSkipVerify() to be false by default")
+		}
+		if cfg.TLSCAFile() != "" {
+			t.Errorf("Expected empty TLSCAFile(), got: %s", cfg.TLSCAFile())
+		}
+		if cfg.HTTPClient() != http.DefaultClient {
+			t.Error("Expected HTTPClient() to fall back to http.DefaultClient")
+		}
+	})
+
+	// Test case: TLS certificate verification disabled
+	t.Run("TLS insecure skip verify enabled", func(t *testing.T) {
+		os.Setenv("VL_INSTANCE_ENTRYPOINT", "https://example.com")
+		os.Setenv("VL_INSTANCE_TLS_INSECURE_SKIP_VERIFY", "true")
+		os.Setenv("VL_INSTANCE_TLS_CA_FILE", "")
+
+		cfg, err := InitConfig()
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+
+		if !cfg.TLSInsecureSkipVerify() {
+			t.Error("Expected TLSInsecureSkipVerify() to be true")
+		}
+		if cfg.HTTPClient() == http.DefaultClient {
+			t.Fatal("Expected a dedicated HTTP client, got http.DefaultClient")
+		}
+
+		transport, ok := cfg.HTTPClient().Transport.(*http.Transport)
+		if !ok {
+			t.Fatalf("Expected *http.Transport, got: %T", cfg.HTTPClient().Transport)
+		}
+		if !transport.TLSClientConfig.InsecureSkipVerify {
+			t.Error("Expected InsecureSkipVerify to be enabled on the transport")
+		}
+	})
+
+	// Test case: boolean values other than 'true'/'false' are accepted
+	t.Run("TLS insecure skip verify numeric value", func(t *testing.T) {
+		os.Setenv("VL_INSTANCE_ENTRYPOINT", "https://example.com")
+		os.Setenv("VL_INSTANCE_TLS_INSECURE_SKIP_VERIFY", "1")
+		os.Setenv("VL_INSTANCE_TLS_CA_FILE", "")
+
+		cfg, err := InitConfig()
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+		if !cfg.TLSInsecureSkipVerify() {
+			t.Error("Expected TLSInsecureSkipVerify() to be true for value '1'")
+		}
+	})
+
+	// Test case: invalid boolean value
+	t.Run("Invalid TLS insecure skip verify", func(t *testing.T) {
+		os.Setenv("VL_INSTANCE_ENTRYPOINT", "https://example.com")
+		os.Setenv("VL_INSTANCE_TLS_INSECURE_SKIP_VERIFY", "yes")
+		os.Setenv("VL_INSTANCE_TLS_CA_FILE", "")
+
+		_, err := InitConfig()
+		if err == nil {
+			t.Fatal("Expected error for invalid VL_INSTANCE_TLS_INSECURE_SKIP_VERIFY, got nil")
+		}
+	})
+
+	// Test case: custom CA bundle
+	t.Run("TLS CA file", func(t *testing.T) {
+		os.Setenv("VL_INSTANCE_ENTRYPOINT", "https://example.com")
+		os.Setenv("VL_INSTANCE_TLS_INSECURE_SKIP_VERIFY", "")
+		os.Setenv("VL_INSTANCE_TLS_CA_FILE", writeTestCAFile(t))
+
+		cfg, err := InitConfig()
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+		if cfg.HTTPClient() == http.DefaultClient {
+			t.Fatal("Expected a dedicated HTTP client, got http.DefaultClient")
+		}
+
+		transport, ok := cfg.HTTPClient().Transport.(*http.Transport)
+		if !ok {
+			t.Fatalf("Expected *http.Transport, got: %T", cfg.HTTPClient().Transport)
+		}
+		if transport.TLSClientConfig.RootCAs == nil {
+			t.Error("Expected RootCAs to be set on the transport")
+		}
+		if transport.TLSClientConfig.InsecureSkipVerify {
+			t.Error("Expected InsecureSkipVerify to stay disabled")
+		}
+	})
+
+	// Test case: CA bundle does not exist
+	t.Run("Missing TLS CA file", func(t *testing.T) {
+		os.Setenv("VL_INSTANCE_ENTRYPOINT", "https://example.com")
+		os.Setenv("VL_INSTANCE_TLS_INSECURE_SKIP_VERIFY", "")
+		os.Setenv("VL_INSTANCE_TLS_CA_FILE", filepath.Join(t.TempDir(), "missing-ca.pem"))
+
+		_, err := InitConfig()
+		if err == nil {
+			t.Fatal("Expected error for missing VL_INSTANCE_TLS_CA_FILE, got nil")
+		}
+	})
+
+	// Test case: CA bundle without any certificate
+	t.Run("TLS CA file without certificates", func(t *testing.T) {
+		caFile := filepath.Join(t.TempDir(), "empty-ca.pem")
+		if err := os.WriteFile(caFile, []byte("not a certificate"), 0o600); err != nil {
+			t.Fatalf("Failed to write CA file: %v", err)
+		}
+
+		os.Setenv("VL_INSTANCE_ENTRYPOINT", "https://example.com")
+		os.Setenv("VL_INSTANCE_TLS_INSECURE_SKIP_VERIFY", "")
+		os.Setenv("VL_INSTANCE_TLS_CA_FILE", caFile)
+
+		_, err := InitConfig()
+		if err == nil {
+			t.Fatal("Expected error for CA file without certificates, got nil")
+		}
+	})
+
+	// Test case: CA bundle and disabled verification are mutually exclusive
+	t.Run("TLS CA file with insecure skip verify", func(t *testing.T) {
+		os.Setenv("VL_INSTANCE_ENTRYPOINT", "https://example.com")
+		os.Setenv("VL_INSTANCE_TLS_INSECURE_SKIP_VERIFY", "true")
+		os.Setenv("VL_INSTANCE_TLS_CA_FILE", writeTestCAFile(t))
+
+		_, err := InitConfig()
+		if err == nil {
+			t.Fatal("Expected error for mutually exclusive TLS options, got nil")
+		}
+	})
+}
+
+// writeTestCAFile generates a self-signed CA certificate and writes it in PEM
+// format to a temporary file, returning the path to it.
+func writeTestCAFile(t *testing.T) string {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("Failed to generate key: %v", err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "mcp-victorialogs-test-ca"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("Failed to create certificate: %v", err)
+	}
+
+	caFile := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatalf("Failed to write CA file: %v", err)
+	}
+
+	return caFile
 }

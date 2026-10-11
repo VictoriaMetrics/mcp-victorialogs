@@ -1,9 +1,13 @@
 package config
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +26,12 @@ type Config struct {
 	defaultTenantID    logstorage.TenantID
 
 	entryPointURL *url.URL
+
+	// TLS configuration for requests to the VictoriaLogs instance
+	tlsInsecureSkipVerify bool
+	tlsCAFile             string
+	// httpClient is nil when the default TLS settings are used
+	httpClient *http.Client
 
 	// Logging configuration
 	logFormat string
@@ -98,6 +108,16 @@ func InitConfig() (*Config, error) {
 		return nil, fmt.Errorf("MCP_LOG_LEVEL must be 'debug', 'info', 'warn' or 'error'")
 	}
 
+	tlsInsecureSkipVerify := false
+	tlsInsecureSkipVerifyStr := os.Getenv("VL_INSTANCE_TLS_INSECURE_SKIP_VERIFY")
+	if tlsInsecureSkipVerifyStr != "" {
+		parsed, err := strconv.ParseBool(strings.TrimSpace(tlsInsecureSkipVerifyStr))
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse VL_INSTANCE_TLS_INSECURE_SKIP_VERIFY: %w", err)
+		}
+		tlsInsecureSkipVerify = parsed
+	}
+
 	result := &Config{
 		serverMode:         strings.ToLower(os.Getenv("MCP_SERVER_MODE")),
 		listenAddr:         os.Getenv("MCP_LISTEN_ADDR"),
@@ -110,6 +130,9 @@ func InitConfig() (*Config, error) {
 		logFormat:          logFormat,
 		logLevel:           logLevel,
 		defaultTenantID:    logstorage.TenantID{AccountID: 0, ProjectID: 0},
+
+		tlsInsecureSkipVerify: tlsInsecureSkipVerify,
+		tlsCAFile:             strings.TrimSpace(os.Getenv("VL_INSTANCE_TLS_CA_FILE")),
 	}
 	// Left for backward compatibility
 	if result.listenAddr == "" {
@@ -144,7 +167,51 @@ func InitConfig() (*Config, error) {
 		return nil, fmt.Errorf("failed to parse URL from VL_INSTANCE_ENTRYPOINT: %w", err)
 	}
 
+	result.httpClient, err = newHTTPClient(result.tlsInsecureSkipVerify, result.tlsCAFile)
+	if err != nil {
+		return nil, err
+	}
+
 	return result, nil
+}
+
+// newHTTPClient builds an HTTP client with custom TLS settings for requests to
+// the VictoriaLogs instance. It returns nil when the default settings are
+// enough, so that http.DefaultClient can be used as is.
+func newHTTPClient(insecureSkipVerify bool, caFile string) (*http.Client, error) {
+	if !insecureSkipVerify && caFile == "" {
+		return nil, nil
+	}
+	if insecureSkipVerify && caFile != "" {
+		return nil, fmt.Errorf("VL_INSTANCE_TLS_INSECURE_SKIP_VERIFY and VL_INSTANCE_TLS_CA_FILE are mutually exclusive")
+	}
+
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: insecureSkipVerify, //nolint:gosec // opt-in via VL_INSTANCE_TLS_INSECURE_SKIP_VERIFY
+	}
+	if caFile != "" {
+		caPEM, err := os.ReadFile(caFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read VL_INSTANCE_TLS_CA_FILE %q: %w", caFile, err)
+		}
+		certPool, err := x509.SystemCertPool()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load system certificate pool: %w", err)
+		}
+		if !certPool.AppendCertsFromPEM(caPEM) {
+			return nil, fmt.Errorf("no certificates found in VL_INSTANCE_TLS_CA_FILE %q", caFile)
+		}
+		tlsConfig.RootCAs = certPool
+	}
+
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type of http.DefaultTransport: %T", http.DefaultTransport)
+	}
+	transport := defaultTransport.Clone()
+	transport.TLSClientConfig = tlsConfig
+
+	return &http.Client{Transport: transport}, nil
 }
 
 func (c *Config) IsStdio() bool {
@@ -197,6 +264,24 @@ func (c *Config) LogFormat() string {
 
 func (c *Config) LogLevel() string {
 	return c.logLevel
+}
+
+func (c *Config) TLSInsecureSkipVerify() bool {
+	return c.tlsInsecureSkipVerify
+}
+
+func (c *Config) TLSCAFile() string {
+	return c.tlsCAFile
+}
+
+// HTTPClient returns the client to use for requests to the VictoriaLogs
+// instance. It falls back to http.DefaultClient when no custom TLS settings
+// are configured.
+func (c *Config) HTTPClient() *http.Client {
+	if c.httpClient == nil {
+		return http.DefaultClient
+	}
+	return c.httpClient
 }
 
 func (c *Config) DefaultTenantID() logstorage.TenantID {
