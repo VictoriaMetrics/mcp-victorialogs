@@ -13,6 +13,8 @@ import (
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/promauth"
 )
 
+const defaultMaxResponseSize = 16 * 1024 * 1024
+
 type Config struct {
 	serverMode                 string
 	listenAddr                 string
@@ -22,6 +24,7 @@ type Config struct {
 	passthroughHeaders         []string
 	disabledTools              map[string]bool
 	heartbeatInterval          time.Duration
+	maxResponseSize            int64
 	defaultTenantID            logstorage.TenantID
 	stateless                  bool
 	disableLocalhostProtection bool
@@ -89,6 +92,19 @@ func InitConfig() (*Config, error) {
 		heartbeatInterval = interval
 	}
 
+	maxResponseSize := int64(defaultMaxResponseSize)
+	maxResponseSizeStr := os.Getenv("MCP_MAX_RESPONSE_SIZE")
+	if maxResponseSizeStr != "" {
+		size, err := strconv.ParseInt(maxResponseSizeStr, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse MCP_MAX_RESPONSE_SIZE: %w", err)
+		}
+		if size < 0 {
+			return nil, fmt.Errorf("MCP_MAX_RESPONSE_SIZE must be non-negative")
+		}
+		maxResponseSize = size
+	}
+
 	logFormat := strings.ToLower(os.Getenv("MCP_LOG_FORMAT"))
 	if logFormat == "" {
 		logFormat = "text"
@@ -134,6 +150,7 @@ func InitConfig() (*Config, error) {
 		passthroughHeaders:         passthroughHeaders,
 		disabledTools:              disabledToolsMap,
 		heartbeatInterval:          heartbeatInterval,
+		maxResponseSize:            maxResponseSize,
 		logFormat:                  logFormat,
 		logLevel:                   logLevel,
 		defaultTenantID:            logstorage.TenantID{AccountID: 0, ProjectID: 0},
@@ -265,6 +282,12 @@ func (c *Config) HeartbeatInterval() time.Duration {
 // when one of them is set, and is http.DefaultClient otherwise.
 func (c *Config) HTTPClient() *http.Client {
 	return c.httpClient
+}
+
+// MaxResponseSize returns the maximum size in bytes of a VictoriaLogs response
+// a tool reads. Zero means no limit.
+func (c *Config) MaxResponseSize() int64 {
+	return c.maxResponseSize
 }
 
 func (c *Config) CustomHeaders() map[string]string {
