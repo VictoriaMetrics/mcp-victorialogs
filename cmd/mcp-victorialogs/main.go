@@ -153,7 +153,14 @@ Try not to second guess information - if you don't know something or lack inform
 		slog.Info("Starting server in HTTP mode", "addr", c.ListenAddr())
 		heartBeatOption := server.WithHeartbeatInterval(c.HeartbeatInterval())
 		loggerOption := server.WithStreamableHTTPLogger(logger.SlogLogger())
-		srv := server.NewStreamableHTTPServer(s, heartBeatOption, loggerOption)
+		opts := []server.StreamableHTTPOption{heartBeatOption, loggerOption}
+		if c.Stateless() {
+			opts = append(opts, server.WithStateLess(true))
+		}
+		if c.DisableLocalhostProtection() {
+			opts = append(opts, server.WithDisableLocalhostProtection(true))
+		}
+		srv := server.NewStreamableHTTPServer(s, opts...)
 		mux.Handle("/mcp", srv)
 		mux.Handle("/", spaHandler())
 	default:
