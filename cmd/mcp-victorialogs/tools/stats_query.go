@@ -46,7 +46,10 @@ func toolStatsQueryHandler(ctx context.Context, cfg *config.Config, tcr mcp.Call
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	time, err := GetToolReqParam[string](tcr, "time", true)
+	// Not required: the schema does not call mcp.Required() on `time`, and its description states
+	// "If it's missing, then it equals to the current time." Fetching it as required contradicted
+	// both and failed the call with `time param is required`.
+	time, err := GetToolReqParam[string](tcr, "time", false)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

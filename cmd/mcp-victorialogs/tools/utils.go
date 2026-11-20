@@ -13,6 +13,11 @@ import (
 	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/config"
 )
 
+// defaultStep is the `step` value advertised by the hits and stats_query_range schemas
+// (mcp.DefaultString). mcp-go writes schema defaults for client hinting only - nothing applies
+// them server-side - so the handlers apply this themselves.
+const defaultStep = "1d"
+
 func CreateSelectRequest(ctx context.Context, cfg *config.Config, tcr mcp.CallToolRequest, path ...string) (*http.Request, error) {
 	accountID, projectID, err := GetToolReqTenant(tcr)
 	if err != nil {

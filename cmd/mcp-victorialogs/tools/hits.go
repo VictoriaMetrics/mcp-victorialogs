@@ -113,9 +113,14 @@ func toolHitsHandler(ctx context.Context, cfg *config.Config, tcr mcp.CallToolRe
 	if end != "" {
 		q.Add("end", end)
 	}
-	if step != "" {
-		q.Add("step", step)
+	// Apply the default advertised by the schema (mcp.DefaultString("1d")). mcp-go writes that
+	// value into the JSON schema for client hinting only - nothing applies it server-side - so
+	// omitting `step` sent no step at all and VictoriaLogs answered
+	// `cannot parse duration from the arg "step="`.
+	if step == "" {
+		step = defaultStep
 	}
+	q.Add("step", step)
 	if len(fields) > 0 {
 		for _, field := range fields {
 			if field != "" {
