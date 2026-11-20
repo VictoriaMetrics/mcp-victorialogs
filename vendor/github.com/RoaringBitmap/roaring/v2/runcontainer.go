@@ -41,6 +41,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 import (
 	"errors"
 	"fmt"
+	"math/bits"
 	"slices"
 )
 
@@ -64,9 +65,12 @@ var (
 	ErrRunNonSorted       = errors.New("runs were not sorted")
 	ErrRunIntervalEqual   = errors.New("intervals were equal")
 	ErrRunIntervalOverlap = errors.New("intervals overlapped or were continguous")
-	ErrRunIntervalSize    = errors.New("too many intervals relative to data")
-	MaxNumIntervals       = 2048
-	MaxIntervalsSum       = 2048
+	// Deprecated: validate no longer requires a run container to be the smallest
+	// encoding of its values, so this error is not returned.
+	ErrRunIntervalSize       = errors.New("too many intervals relative to data")
+	ErrRunIntervalOutOfRange = errors.New("interval extends past the end of the container")
+	MaxNumIntervals          = 2048
+	MaxIntervalsSum          = 2048
 )
 
 func newInterval16Range(start, last uint16) interval16 {
@@ -220,7 +224,7 @@ func newRunContainer16FromBitmapContainer(bc *bitmapContainer) *runContainer16 {
 			// wrap up, no more runs
 			return rc
 		}
-		localRunStart := countTrailingZeros(curWord)
+		localRunStart := bits.TrailingZeros64(curWord)
 		runStart := localRunStart + 64*longCtr
 		// stuff 1s into number's LSBs
 		curWordWith1s := curWord | (curWord - 1)
@@ -239,7 +243,7 @@ func newRunContainer16FromBitmapContainer(bc *bitmapContainer) *runContainer16 {
 			rc.iv[runCount].length = uint16(runEnd) - uint16(runStart) - 1
 			return rc
 		}
-		localRunEnd := countTrailingZeros(^curWordWith1s)
+		localRunEnd := bits.TrailingZeros64(^curWordWith1s)
 		runEnd = localRunEnd + longCtr*64
 		rc.iv[runCount].start = uint16(runStart)
 		rc.iv[runCount].length = uint16(runEnd) - 1 - uint16(runStart)
@@ -2507,6 +2511,100 @@ func (rc *runContainer16) rank(x uint16) int {
 	return rnk
 }
 
+// getCardinalityInRange returns the number of values in the half-open range [start, end).
+func (rc *runContainer16) getCardinalityInRange(start, end uint) int {
+	if start >= end || len(rc.iv) == 0 {
+		return 0
+	}
+	// end is exclusive, so the last included value is end-1.
+	last := end - 1
+
+	// Find the interval containing or just before 'start'.
+	wStart, startInside, _ := rc.search(int(start))
+	// Find the interval containing or just before 'last'.
+	wEnd, endInside, _ := rc.search(int(last))
+
+	if wStart < 0 && wEnd < 0 {
+		// Both are before the first interval → nothing in range.
+		return 0
+	}
+
+	// Determine the effective first interval index to start counting from.
+	firstIdx := wStart
+	if !startInside {
+		// start falls between intervals or before the first; next interval is wStart+1.
+		firstIdx = wStart + 1
+	}
+	// Determine the effective last interval index.
+	lastIdx := wEnd
+	if !endInside && wEnd >= 0 {
+		// last falls between intervals; the last fully-before interval is wEnd,
+		// but its values are all < start of next, and we need values <= last.
+		// All of wEnd's values are < start (if wEnd < firstIdx), we handle below.
+		lastIdx = wEnd
+	}
+
+	if firstIdx >= len(rc.iv) {
+		return 0
+	}
+	if lastIdx < 0 || lastIdx < firstIdx {
+		return 0
+	}
+
+	// If start and end land in the same interval (or there's only one relevant).
+	if firstIdx == lastIdx && firstIdx >= 0 {
+		ivStart := uint(rc.iv[firstIdx].start)
+		ivEnd := uint(rc.iv[firstIdx].last())
+		// Clamp
+		lo := start
+		if ivStart > lo {
+			lo = ivStart
+		}
+		hi := last
+		if ivEnd < hi {
+			hi = ivEnd
+		}
+		if lo > hi {
+			return 0
+		}
+		return int(hi-lo) + 1
+	}
+
+	result := 0
+
+	// Handle the first interval (may be partial if start > iv[firstIdx].start).
+	if startInside && firstIdx == wStart {
+		// start is inside this interval; count from start to end of interval.
+		result += int(uint(rc.iv[firstIdx].last())-start) + 1
+	} else if firstIdx < len(rc.iv) {
+		// start is before this interval; count the full interval.
+		result += rc.iv[firstIdx].runlen()
+	}
+
+	// Sum full intervals strictly between firstIdx and lastIdx.
+	for i := firstIdx + 1; i < lastIdx; i++ {
+		result += rc.iv[i].runlen()
+	}
+
+	// Handle the last interval (may be partial if last < iv[lastIdx].last()).
+	if lastIdx > firstIdx && lastIdx < len(rc.iv) {
+		if endInside {
+			// last is inside this interval; count from start of interval to last.
+			result += int(last-uint(rc.iv[lastIdx].start)) + 1
+		} else {
+			// last is beyond this interval; count the full interval.
+			// But wait — if !endInside, then last < iv[lastIdx].start,
+			// which means lastIdx's values are all > last. Don't count it.
+			// Actually, wEnd == lastIdx means iv[lastIdx].start <= last (from search semantics).
+			// If !endInside and wEnd == lastIdx, last is between iv[lastIdx].last() and iv[lastIdx+1].start.
+			// That means last >= iv[lastIdx].last()+1, so we can count the full interval.
+			result += rc.iv[lastIdx].runlen()
+		}
+	}
+
+	return result
+}
+
 func (rc *runContainer16) selectInt(x uint16) int {
 	var offset int
 	for k := range rc.iv {
@@ -2852,15 +2950,19 @@ func (rc *runContainer16) validate() error {
 		return ErrRunIntervalsEmpty
 	}
 
-	intervalsSum := 0
+	// check this first: interval16.last() wraps around past the end of the container
+	for _, iv := range rc.iv {
+		if int(iv.start)+int(iv.length) > int(MaxUint16) {
+			return ErrRunIntervalOutOfRange
+		}
+	}
+
 	for outeridx := range rc.iv {
 		// The length being stored is the actual length - 1.
 		// So we need to add 1 to get the actual length.
 		// It is not possible to have a run with length 0.
 
 		outerInterval := rc.iv[outeridx]
-
-		intervalsSum += outerInterval.runlen()
 		for inneridx := outeridx + 1; inneridx < len(rc.iv); inneridx++ {
 
 			innerInterval := rc.iv[inneridx]
@@ -2882,27 +2984,7 @@ func (rc *runContainer16) validate() error {
 		}
 
 	}
-	/*
-			if number of distinct values in the container >= 2048 then
-		    check that the number of runs is no more than 2047
-		    (otherwise you could use a bitset container)
-			else
-		    check that the number of runs < (number of distinct values) / 2
-		    (otherwise you could use an array container)
-	*/
-
-	sizeAsRunContainer := runContainer16SerializedSizeInBytes(len(rc.iv))
-	sizeAsBitmapContainer := bitmapContainerSizeInBytes()
-	sizeAsArrayContainer := arrayContainerSizeInBytes(intervalsSum)
-	// this is always ok:
-	if sizeAsRunContainer < minOfInt(sizeAsBitmapContainer, sizeAsArrayContainer) {
-		return nil
-	}
-	if sizeAsRunContainer >= sizeAsBitmapContainer {
-		return ErrRunIntervalSize
-	}
-	if sizeAsRunContainer >= sizeAsArrayContainer {
-		return ErrRunIntervalSize
-	}
+	// A run container need not be the smallest encoding of its values: operations such as
+	// AddOffset can produce run containers that runOptimize would convert.
 	return nil
 }

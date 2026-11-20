@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"math/bits"
 	"strconv"
 
 	"github.com/RoaringBitmap/roaring/v2/internal"
@@ -166,7 +167,7 @@ func (rb *Bitmap) FromDense(bitmap []uint64, doCopy bool) {
 			for _, w := range words {
 				for w != 0 {
 					t := w & -w
-					c.content[pos] = uint16(base + int(popcount(t-1)))
+					c.content[pos] = uint16(base + bits.OnesCount64(t-1))
 					pos++
 					w ^= t
 				}
@@ -223,28 +224,24 @@ func (rb *Bitmap) WriteDenseTo(bitmap []uint64) {
 	}
 }
 
-// Checksum computes a hash (currently FNV-1a) for a bitmap that is suitable for
+// Checksum computes a hash (FNV-1a) for a bitmap that is suitable for
 // using bitmaps as elements in hash sets or as keys in hash maps, as well as
-// generally quicker comparisons.
-// The implementation is biased towards efficiency in little endian machines, so
-// expect some extra CPU cycles and memory to be used if your machine is big endian.
-// Likewise, do not use this to verify integrity unless you are certain you will load
-// the bitmap on a machine with the same endianess used to create it. (Thankfully
-// very few people use big endian machines these days.)
+// generally quick comparisons.
 func (rb *Bitmap) Checksum() uint64 {
 	const (
 		offset = 14695981039346656037
 		prime  = 1099511628211
 	)
 
-	var bytes []byte
-
 	hash := uint64(offset)
 
-	bytes = uint16SliceAsByteSlice(rb.highlowcontainer.keys)
-
-	for _, b := range bytes {
-		hash ^= uint64(b)
+	// Hash the keys (uint16 slice) directly
+	for _, key := range rb.highlowcontainer.keys {
+		// Hash low byte first (little endian)
+		hash ^= uint64(key & 0xFF)
+		hash *= prime
+		// Hash high byte
+		hash ^= uint64(key >> 8)
 		hash *= prime
 	}
 
@@ -255,23 +252,51 @@ func (rb *Bitmap) Checksum() uint64 {
 
 		switch c := c.(type) {
 		case *bitmapContainer:
-			bytes = uint64SliceAsByteSlice(c.bitmap)
+			for _, val := range c.bitmap {
+				// Hash in little-endian byte order (unrolled loop)
+				hash ^= val & 0xFF
+				hash *= prime
+				hash ^= (val >> 8) & 0xFF
+				hash *= prime
+				hash ^= (val >> 16) & 0xFF
+				hash *= prime
+				hash ^= (val >> 24) & 0xFF
+				hash *= prime
+				hash ^= (val >> 32) & 0xFF
+				hash *= prime
+				hash ^= (val >> 40) & 0xFF
+				hash *= prime
+				hash ^= (val >> 48) & 0xFF
+				hash *= prime
+				hash ^= (val >> 56) & 0xFF
+				hash *= prime
+			}
 		case *arrayContainer:
-			bytes = uint16SliceAsByteSlice(c.content)
+			for _, val := range c.content {
+				// Hash low byte first (little endian)
+				hash ^= uint64(val & 0xFF)
+				hash *= prime
+				// Hash high byte
+				hash ^= uint64(val >> 8)
+				hash *= prime
+			}
 		case *runContainer16:
-			bytes = interval16SliceAsByteSlice(c.iv)
+			for _, iv := range c.iv {
+				// Hash start (uint16)
+				hash ^= uint64(iv.start & 0xFF)
+				hash *= prime
+				hash ^= uint64(iv.start >> 8)
+				hash *= prime
+				// Hash length (uint16)
+				hash ^= uint64(iv.length & 0xFF)
+				hash *= prime
+				hash ^= uint64(iv.length >> 8)
+				hash *= prime
+			}
 		default:
 			panic("invalid container type")
 		}
 
-		if len(bytes) == 0 {
-			panic("empty containers are not supported")
-		}
-
-		for _, b := range bytes {
-			hash ^= uint64(b)
-			hash *= prime
-		}
 	}
 
 	return hash
@@ -1248,6 +1273,79 @@ func (rb *Bitmap) Rank(x uint32) uint64 {
 	return size
 }
 
+// CardinalityInRange returns the number of integers that are in the half-open range [start, end).
+// It is equivalent to Rank(uint32(end-1)) - Rank(uint32(start-1)) for start > 0,
+// but is optimized to only scan containers that overlap the range, making it
+// O(k) in the number of containers spanned by [start, end) rather than O(n)
+// in total containers. The parameter type is uint64 to allow end = 1<<32
+// (the full 32-bit range).
+func (rb *Bitmap) CardinalityInRange(start, end uint64) uint64 {
+	if start >= end {
+		return 0
+	}
+	if end > MaxUint32+1 {
+		end = MaxUint32 + 1
+	}
+
+	hbStart := highbits(uint32(start))
+	hbEnd := highbits(uint32(end - 1)) // end-1 is the last included value
+
+	size := rb.highlowcontainer.size()
+
+	// Binary-search to find the first container index >= hbStart.
+	startIdx := rb.highlowcontainer.getIndex(hbStart)
+	if startIdx < 0 {
+		startIdx = -startIdx - 1 // insertion point
+	}
+	if startIdx >= size {
+		return 0
+	}
+
+	result := uint64(0)
+
+	// Handle the case where start and end are in the same container.
+	if hbStart == hbEnd {
+		key := rb.highlowcontainer.getKeyAtIndex(startIdx)
+		if key == hbStart {
+			lo := uint(lowbits(uint32(start)))
+			hi := uint(lowbits(uint32(end-1))) + 1
+			return uint64(rb.highlowcontainer.getContainerAtIndex(startIdx).getCardinalityInRange(lo, hi))
+		}
+		return 0
+	}
+
+	// Handle the first container (may be partial).
+	key := rb.highlowcontainer.getKeyAtIndex(startIdx)
+	if key == hbStart {
+		lo := uint(lowbits(uint32(start)))
+		result += uint64(rb.highlowcontainer.getContainerAtIndex(startIdx).getCardinalityInRange(lo, 1<<16))
+		startIdx++
+	}
+
+	// Binary-search to find the last container index <= hbEnd.
+	endIdx := rb.highlowcontainer.getIndex(hbEnd)
+	endPresent := endIdx >= 0
+	if endIdx < 0 {
+		endIdx = -endIdx - 2 // index of the last container with key < hbEnd
+	}
+
+	// Tight loop over middle containers — no per-iteration key comparisons.
+	for i := startIdx; i <= endIdx; i++ {
+		if endPresent && i == endIdx {
+			break // this is the end container, handled below
+		}
+		result += uint64(rb.highlowcontainer.getContainerAtIndex(i).getCardinality())
+	}
+
+	// Handle the last container (may be partial).
+	if endPresent {
+		hi := uint(lowbits(uint32(end-1))) + 1
+		result += uint64(rb.highlowcontainer.getContainerAtIndex(endIdx).getCardinalityInRange(0, hi))
+	}
+
+	return result
+}
+
 // Select returns the xth integer in the bitmap. If you pass 0, you get
 // the smallest element. Note that this function differs in convention from
 // the Rank function which returns 1 on the smallest value.
@@ -1504,20 +1602,26 @@ func (rb *Bitmap) Xor(x2 *Bitmap) {
 					break
 				}
 			} else if s1 > s2 {
-				rb.highlowcontainer.insertNewKeyValueAt(pos1, x2.highlowcontainer.getKeyAtIndex(pos2), x2.highlowcontainer.getContainerAtIndex(pos2).clone())
-				length1++
-				pos1++
-				pos2++
+				// A source-only key must be inserted at pos1. Inserting in
+				// place shifts the aligned suffix once per inserted key, which
+				// is quadratic when many keys are interleaved. Finish the merge
+				// into fresh slices in a single linear pass instead.
+				rb.highlowcontainer.mergeBulk(&x2.highlowcontainer, pos1, pos1, pos2, true)
+				return
 			} else {
 				c := rb.highlowcontainer.getWritableContainerAtIndex(pos1).ixor(x2.highlowcontainer.getContainerAtIndex(pos2))
 				if !c.isEmpty() {
 					rb.highlowcontainer.setContainerAtIndex(pos1, c)
 					pos1++
+					pos2++
 				} else {
-					rb.highlowcontainer.removeAtIndex(pos1)
-					length1--
+					// The aligned containers cancelled out. Removing pos1 in
+					// place would shift the suffix once per removed key (also
+					// quadratic), so finish the merge into fresh slices,
+					// dropping this now-empty container.
+					rb.highlowcontainer.mergeBulk(&x2.highlowcontainer, pos1, pos1+1, pos2+1, true)
+					return
 				}
-				pos2++
 			}
 		} else {
 			break
@@ -1547,14 +1651,13 @@ main:
 				}
 				s1 = rb.highlowcontainer.getKeyAtIndex(pos1)
 			} else if s1 > s2 {
-				rb.highlowcontainer.insertNewKeyValueAt(pos1, s2, x2.highlowcontainer.getContainerAtIndex(pos2).clone())
-				pos1++
-				length1++
-				pos2++
-				if pos2 == length2 {
-					break main
-				}
-				s2 = x2.highlowcontainer.getKeyAtIndex(pos2)
+				// The receiver has run ahead of the source: a source-only key
+				// must be inserted at pos1. Inserting in place shifts the
+				// aligned suffix once per inserted key, which is quadratic when
+				// many source-only keys are interleaved. Finish the merge into
+				// fresh slices in a single linear pass instead.
+				rb.highlowcontainer.mergeBulk(&x2.highlowcontainer, pos1, pos1, pos2, false)
+				return
 			} else {
 				newcont := rb.highlowcontainer.getUnionedWritableContainer(pos1, x2.highlowcontainer.getContainerAtIndex(pos2))
 				rb.highlowcontainer.replaceKeyAndContainerAtIndex(pos1, s1, newcont, false)
@@ -2373,6 +2476,8 @@ func (rb *Bitmap) Describe() {
 // Validate checks if the bitmap is internally consistent.
 // You may call it after deserialization to check that the bitmap is valid.
 // This function returns an error if the bitmap is invalid, nil otherwise.
+// It does not check that each container uses the most compact encoding:
+// call RunOptimize for that.
 func (rb *Bitmap) Validate() error {
 	return rb.highlowcontainer.validate()
 }

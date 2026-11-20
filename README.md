@@ -84,6 +84,7 @@ docker run -d --name mcp-victorialogs \
   -e VL_INSTANCE_ENTRYPOINT=https://play-vmlogs.victoriametrics.com \
   -e MCP_SERVER_MODE=http \
   -e MCP_LISTEN_ADDR=:8081 \
+  -e MCP_AUTH_TOKEN=your-secret-token \
   -p 8081:8081 \
   ghcr.io/victoriametrics/mcp-victorialogs
 ```
@@ -129,19 +130,25 @@ Check out [VictoriaLogs MCP Server Helm chart](https://docs.victoriametrics.com/
 
 MCP Server for VictoriaLogs is configured via environment variables:
 
-| Variable                   | Description                                                                                                                                                                                                                                                         | Required | Default          | Allowed values                   |
-|----------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|------------------|----------------------------------|
-| `VL_INSTANCE_ENTRYPOINT`   | URL to VictoriaLogs instance                                                                                                                                                                                                                                        | Yes      | -                | -                                |
-| `VL_INSTANCE_BEARER_TOKEN` | Authentication token for VictoriaLogs API                                                                                                                                                                                                                           | No       | -                | -                                |
-| `VL_INSTANCE_HEADERS`      | Custom HTTP headers to send with requests (comma-separated key=value pairs)                                                                                                                                                                                         | No       | -                | -                                |
-| `MCP_PASSTHROUGH_HEADERS`  | HTTP header names to forward from incoming MCP requests to VictoriaLogs (comma-separated list). Overrides `VL_INSTANCE_HEADERS` on collision. Only applies in `sse`/`http` modes.                                                                                   | No       | -                | -                                |
-| `VL_DEFAULT_TENANT_ID`     | Default tenant ID used when tenant is not specified in requests (format: `AccountID:ProjectID` or `AccountID`)                                                                                                                                                      | No       | `0:0`            | -                                |
-| `MCP_SERVER_MODE`          | Server operation mode. See [Modes](#modes) for details.                                                                                                                                                                                                             | No       | `stdio`          | `stdio`, `sse`, `http`           |
-| `MCP_LISTEN_ADDR`          | Address for SSE or HTTP server to listen on                                                                                                                                                                                                                         | No       | `localhost:8081` | -                                |
-| `MCP_DISABLED_TOOLS`       | Comma-separated list of tools to disable                                                                                                                                                                                                                            | No       | -                | -                                |
-| `MCP_HEARTBEAT_INTERVAL`   | Defines the heartbeat interval for the streamable-http protocol. <br /> It means the MCP server will send a heartbeat to the client through the GET connection, <br /> to keep the connection alive from being closed by the network infrastructure (e.g. gateways) | No       | `30s`            | -                                |
-| `MCP_LOG_FORMAT`           | Log output format                                                                                                                                                                                                                                                   | No       | `text`           | `text`, `json`                   |
-| `MCP_LOG_LEVEL`            | Minimum log level. `debug` also logs MCP request and result payloads                                                                                                                                                                                                | No       | `info`           | `debug`, `info`, `warn`, `error` |
+| Variable                           | Description                                                                                                                                                                                                                                                           | Required | Default          | Allowed values                   |
+|------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|------------------|----------------------------------|
+| `VL_INSTANCE_ENTRYPOINT`           | URL to VictoriaLogs instance                                                                                                                                                                                                                                          | Yes      | -                | -                                |
+| `VL_INSTANCE_BEARER_TOKEN`         | Authentication token for VictoriaLogs API                                                                                                                                                                                                                             | No       | -                | -                                |
+| `VL_INSTANCE_HEADERS`              | Custom HTTP headers to send with requests (comma-separated key=value pairs)                                                                                                                                                                                           | No       | -                | -                                |
+| `VL_INSTANCE_CA_CERT`              | PEM-encoded CA certificate(s) to verify the TLS certificate of VictoriaLogs with, instead of the system CA bundle. Useful when mounting a CA file is not possible. Literal `\n` sequences are treated as newlines. Cannot be used with `VL_INSTANCE_CA_CERT_FILE`     | No       | -                | -                                |
+| `VL_INSTANCE_CA_CERT_FILE`         | Path to a file with PEM-encoded CA certificate(s) to verify the TLS certificate of VictoriaLogs with, instead of the system CA bundle. The file is re-read automatically, so CA rotation does not need a restart. Cannot be used with `VL_INSTANCE_CA_CERT`           | No       | -                | -                                |
+| `MCP_PASSTHROUGH_HEADERS`          | HTTP header names to forward from incoming MCP requests to VictoriaLogs (comma-separated list). Overrides `VL_INSTANCE_HEADERS` on collision. Only applies in `sse`/`http` modes.                                                                                     | No       | -                | -                                |
+| `VL_DEFAULT_TENANT_ID`             | Default tenant ID used when tenant is not specified in requests (format: `AccountID:ProjectID` or `AccountID`)                                                                                                                                                        | No       | `0:0`            | -                                |
+| `MCP_SERVER_MODE`                  | Server operation mode. See [Modes](#modes) for details.                                                                                                                                                                                                               | No       | `stdio`          | `stdio`, `sse`, `http`           |
+| `MCP_LISTEN_ADDR`                  | Address for SSE or HTTP server to listen on                                                                                                                                                                                                                           | No       | `localhost:8081` | -                                |
+| `MCP_DISABLED_TOOLS`               | Comma-separated list of tools to disable                                                                                                                                                                                                                              | No       | -                | -                                |
+| `MCP_HEARTBEAT_INTERVAL`           | Defines the heartbeat interval for the streamable-http protocol. <br /> It means the MCP server will send a heartbeat to the client through the GET connection, <br /> to keep the connection alive from being closed by the network infrastructure (e.g. gateways)   | No       | `30s`            | -                                |
+| `MCP_LOG_FORMAT`                   | Log output format                                                                                                                                                                                                                                                     | No       | `text`           | `text`, `json`                   |
+| `MCP_LOG_LEVEL`                    | Minimum log level. `debug` also logs MCP request and result payloads                                                                                                                                                                                                                                                  | No       | `info`           | `debug`, `info`, `warn`, `error` |
+| `MCP_STATELESS`                    | Run the Streamable HTTP server in stateless mode: session IDs in the `Mcp-Session-Id` header are ignored rather than validated. Useful when the server is fronted by a proxy that injects its own session id. Only applies in `http` mode.                            | No       | `false`          | `true`, `false`                  |
+| `MCP_DISABLE_LOCALHOST_PROTECTION` | Disable the DNS-rebinding guard that rejects a loopback request whose `Host` header is not a localhost value with 403. Needed when a same-host reverse proxy forwards requests over 127.0.0.1 while preserving the original Host header. Only applies in `http` mode. | No       | `false`          | `true`, `false`                  |
+| `MCP_AUTH_TOKEN`                   | Bearer token for authenticating incoming MCP requests. Clients must send `Authorization: Bearer <token>`. Public paths (`/health/*`, `/metrics`, `/`, static assets) are excluded from authentication. Only applies in `sse`/`http` modes.                            | No       | -                | -                                |
+
 
 ### Modes
 
@@ -150,6 +157,13 @@ MCP Server supports the following modes of operation (transports):
 - `stdio` - Standard input/output mode, where the server reads commands from standard input and writes responses to standard output. This is the default mode and is suitable for local servers.
 - `sse` - Server-Sent Events. Server will expose the `/sse` and `/message` endpoints for SSE connections.
 - `http` - Streamable HTTP. Server will expose the `/mcp` endpoint for HTTP connections.
+
+> **Running `http` mode behind a reverse proxy such as AWS Bedrock AgentCore Runtime.**
+> Some platforms terminate MCP connections and forward requests to the server over loopback.
+> They inject their own `Mcp-Session-Id` header and keep the original non-localhost `Host` header.
+> With default settings the server rejects those session IDs and answers `403` from the DNS-rebinding guard, so tool discovery fails.
+> Set `MCP_STATELESS=true` and `MCP_DISABLE_LOCALHOST_PROTECTION=true` together with `MCP_SERVER_MODE=http`.
+> Keep both disabled for direct or local use.
 
 More info about transports you can find in MCP docs:
 
@@ -161,6 +175,9 @@ More info about transports you can find in MCP docs:
 ```bash
 # For a public playground
 export VL_INSTANCE_ENTRYPOINT="https://play-vmlogs.victoriametrics.com"
+
+# Require clients to send "Authorization: Bearer <token>" (optional, only for sse/http modes)
+export MCP_AUTH_TOKEN="your-secret-token"
 
 # Custom headers for authentication (e.g., behind a reverse proxy)
 # Expected syntax is key=value separated by commas

@@ -3,6 +3,7 @@ package roaring
 import (
 	"cmp"
 	"math"
+	"math/bits"
 	"math/rand"
 	"slices"
 )
@@ -64,13 +65,16 @@ func fillArrayAND(container []uint16, bitmap1, bitmap2 []uint64) {
 	if len(bitmap1) != len(bitmap2) {
 		panic("array lengths don't match")
 	}
-	// TODO: rewrite in assembly
+	if useVectorFill {
+		fillArrayANDVector(container, bitmap1, bitmap2)
+		return
+	}
 	pos := 0
 	for k := range bitmap1 {
 		bitset := bitmap1[k] & bitmap2[k]
 		for bitset != 0 {
 			t := bitset & -bitset
-			container[pos] = uint16((k*64 + int(popcount(t-1))))
+			container[pos] = uint16((k*64 + bits.OnesCount64(t-1)))
 			pos = pos + 1
 			bitset ^= t
 		}
@@ -81,13 +85,16 @@ func fillArrayANDNOT(container []uint16, bitmap1, bitmap2 []uint64) {
 	if len(bitmap1) != len(bitmap2) {
 		panic("array lengths don't match")
 	}
-	// TODO: rewrite in assembly
+	if useVectorFill {
+		fillArrayANDNOTVector(container, bitmap1, bitmap2)
+		return
+	}
 	pos := 0
 	for k := range bitmap1 {
 		bitset := bitmap1[k] &^ bitmap2[k]
 		for bitset != 0 {
 			t := bitset & -bitset
-			container[pos] = uint16((k*64 + int(popcount(t-1))))
+			container[pos] = uint16((k*64 + bits.OnesCount64(t-1)))
 			pos = pos + 1
 			bitset ^= t
 		}
@@ -98,13 +105,16 @@ func fillArrayXOR(container []uint16, bitmap1, bitmap2 []uint64) {
 	if len(bitmap1) != len(bitmap2) {
 		panic("array lengths don't match")
 	}
-	// TODO: rewrite in assembly
+	if useVectorFill {
+		fillArrayXORVector(container, bitmap1, bitmap2)
+		return
+	}
 	pos := 0
 	for k := 0; k < len(bitmap1); k++ {
 		bitset := bitmap1[k] ^ bitmap2[k]
 		for bitset != 0 {
 			t := bitset & -bitset
-			container[pos] = uint16((k*64 + int(popcount(t-1))))
+			container[pos] = uint16((k*64 + bits.OnesCount64(t-1)))
 			pos = pos + 1
 			bitset ^= t
 		}
@@ -205,7 +215,7 @@ func wordCardinalityForBitmapRange(bitmap []uint64, start int, end int) uint64 {
 	firstword := start / 64
 	endword := (end - 1) / 64
 	for i := firstword; i <= endword; i++ {
-		answer += popcount(bitmap[i])
+		answer += uint64(bits.OnesCount64(bitmap[i]))
 	}
 	return answer
 }
@@ -215,31 +225,31 @@ func selectBitPosition(w uint64, j int) int {
 
 	// Divide 64bit
 	part := w & 0xFFFFFFFF
-	n := popcount(part)
-	if n <= uint64(j) {
+	n := bits.OnesCount64(part)
+	if n <= j {
 		part = w >> 32
 		seen += 32
-		j -= int(n)
+		j -= n
 	}
 	w = part
 
 	// Divide 32bit
 	part = w & 0xFFFF
-	n = popcount(part)
-	if n <= uint64(j) {
+	n = bits.OnesCount64(part)
+	if n <= j {
 		part = w >> 16
 		seen += 16
-		j -= int(n)
+		j -= n
 	}
 	w = part
 
 	// Divide 16bit
 	part = w & 0xFF
-	n = popcount(part)
-	if n <= uint64(j) {
+	n = bits.OnesCount64(part)
+	if n <= j {
 		part = w >> 8
 		seen += 8
-		j -= int(n)
+		j -= n
 	}
 	w = part
 

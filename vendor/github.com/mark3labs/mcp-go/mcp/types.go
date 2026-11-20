@@ -240,15 +240,16 @@ func (m *Meta) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// NewMetaFromMap builds metadata without modifying or retaining the caller's map.
+// Nested values are shared; only the top-level map is copied.
 func NewMetaFromMap(m map[string]any) *Meta {
-	progressToken := m["progressToken"]
-	if progressToken != nil {
-		delete(m, "progressToken")
-	}
+	fields := maps.Clone(m)
+	progressToken := fields["progressToken"]
+	delete(fields, "progressToken")
 
 	return &Meta{
 		ProgressToken:    progressToken,
-		AdditionalFields: m,
+		AdditionalFields: fields,
 	}
 }
 
@@ -300,32 +301,45 @@ func (p NotificationParams) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements custom JSON unmarshaling
 func (p *NotificationParams) UnmarshalJSON(data []byte) error {
-	// Create a map to hold all fields
-	var m map[string]any
-	if err := json.Unmarshal(data, &m); err != nil {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
-
-	// Initialize maps if they're nil
-	if p.Meta == nil {
-		p.Meta = make(map[string]any)
-	}
-	if p.AdditionalFields == nil {
-		p.AdditionalFields = make(map[string]any)
-	}
-
-	// Process all fields
-	for k, v := range m {
-		if k == "_meta" {
-			// Handle Meta field
-			if meta, ok := v.(map[string]any); ok {
-				p.Meta = meta
-			}
-		} else {
-			// Handle additional fields
-			p.AdditionalFields[k] = v
+	if fields == nil {
+		if p.Meta == nil {
+			p.Meta = make(map[string]any)
 		}
+		if p.AdditionalFields == nil {
+			p.AdditionalFields = make(map[string]any)
+		}
+		return nil
 	}
+	m := make(map[string]any, len(fields))
+	for name, raw := range fields {
+		if name == "requestId" {
+			var id RequestId
+			if err := json.Unmarshal(raw, &id); err == nil {
+				m[name] = id.Value()
+				if value, ok := m[name].(int64); ok && value >= -9007199254740991 && value <= 9007199254740991 {
+					m[name] = float64(value)
+				}
+				continue
+			}
+		}
+		var value any
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return err
+		}
+		m[name] = value
+	}
+
+	meta := make(map[string]any)
+	if v, ok := m["_meta"].(map[string]any); ok {
+		meta = v
+	}
+	delete(m, "_meta")
+	p.Meta = meta
+	p.AdditionalFields = m
 
 	return nil
 }
@@ -355,7 +369,9 @@ func NewRequestId(value any) RequestId {
 	return RequestId{value: value}
 }
 
-// Value returns the underlying value of the RequestId
+// Value returns the underlying value of the RequestId.
+// Decoded integers use int64 when representable, otherwise json.Number to
+// preserve the exact value. Strings and fractional numbers retain their types.
 func (r RequestId) Value() any {
 	return r.value
 }
@@ -368,13 +384,24 @@ func (r RequestId) String() string {
 	case int64:
 		return "int64:" + strconv.FormatInt(v, 10)
 	case float64:
-		if v == float64(int64(v)) {
-			return "int64:" + strconv.FormatInt(int64(v), 10)
+		if encoded, err := json.Marshal(v); err == nil {
+			number := json.Number(encoded)
+			if _, integer := integerRequestNumber(number); integer {
+				return requestNumberKey(number)
+			}
 		}
 		return "float64:" + strconv.FormatFloat(v, 'f', -1, 64)
+	case json.Number:
+		return requestNumberKey(v)
 	case nil:
 		return "<nil>"
 	default:
+		if encoded, err := json.Marshal(v); err == nil {
+			var decoded RequestId
+			if err := json.Unmarshal(encoded, &decoded); err == nil {
+				return decoded.String()
+			}
+		}
 		return "unknown:" + fmt.Sprintf("%v", v)
 	}
 }
@@ -399,6 +426,14 @@ func (r *RequestId) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &s); err == nil {
 		r.value = s
 		return nil
+	}
+
+	var number json.Number
+	if err := json.Unmarshal(data, &number); err == nil {
+		if value, integer := integerRequestNumber(number); integer {
+			r.value = value
+			return nil
+		}
 	}
 
 	// JSON numbers are unmarshaled as float64 in Go
@@ -1453,6 +1488,8 @@ func (t *ToolResultContent) UnmarshalJSON(data []byte) error {
 	t.ToolUseID = raw.ToolUseID
 	t.IsError = raw.IsError
 
+	t.RawStructuredContent = nil
+	t.StructuredContent = nil
 	if len(raw.StructuredContent) > 0 {
 		t.RawStructuredContent = append(json.RawMessage(nil), raw.StructuredContent...)
 		if err := json.Unmarshal(raw.StructuredContent, &t.StructuredContent); err != nil {
@@ -1460,7 +1497,8 @@ func (t *ToolResultContent) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-	if len(raw.Content) > 0 {
+	t.Content = nil
+	if raw.Content != nil {
 		t.Content = make([]Content, 0, len(raw.Content))
 		for _, rawContent := range raw.Content {
 			c, err := UnmarshalContent(rawContent)
@@ -1813,9 +1851,27 @@ type TaskResultParams struct {
 type TaskResultResult struct {
 	Result
 	// Tool call result fields (for task-augmented tool calls)
-	Content           []Content `json:"content,omitempty"`
+	Content           []Content `json:"content"`
 	StructuredContent any       `json:"structuredContent,omitempty"`
-	IsError           bool      `json:"isError,omitempty"`
+	// RawStructuredContent preserves structured JSON precision when forwarding a parsed result.
+	RawStructuredContent json.RawMessage `json:"-"`
+	IsError              bool            `json:"isError,omitempty"`
+}
+
+// MarshalJSON preserves structured content and emits an array for tool result content.
+func (r TaskResultResult) MarshalJSON() ([]byte, error) {
+	if r.Content == nil {
+		r.Content = []Content{}
+	}
+	type alias TaskResultResult
+	out := struct {
+		alias
+		StructuredContent any `json:"structuredContent,omitempty"`
+	}{alias: alias(r), StructuredContent: r.StructuredContent}
+	if len(r.RawStructuredContent) > 0 {
+		out.StructuredContent = r.RawStructuredContent
+	}
+	return json.Marshal(out)
 }
 
 // CancelTaskRequest cancels an in-progress task.

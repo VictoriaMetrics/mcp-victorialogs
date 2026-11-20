@@ -2,26 +2,33 @@ package config
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/VictoriaMetrics/VictoriaLogs/lib/logstorage"
+	"github.com/VictoriaMetrics/VictoriaMetrics/lib/promauth"
 )
 
 type Config struct {
-	serverMode         string
-	listenAddr         string
-	entrypoint         string
-	bearerToken        string
-	customHeaders      map[string]string
-	passthroughHeaders []string
-	disabledTools      map[string]bool
-	heartbeatInterval  time.Duration
-	defaultTenantID    logstorage.TenantID
+	serverMode                 string
+	listenAddr                 string
+	entrypoint                 string
+	bearerToken                string
+	customHeaders              map[string]string
+	passthroughHeaders         []string
+	disabledTools              map[string]bool
+	heartbeatInterval          time.Duration
+	defaultTenantID            logstorage.TenantID
+	stateless                  bool
+	disableLocalhostProtection bool
+	authToken                  string
 
 	entryPointURL *url.URL
+	httpClient    *http.Client
 
 	// Logging configuration
 	logFormat string
@@ -98,18 +105,41 @@ func InitConfig() (*Config, error) {
 		return nil, fmt.Errorf("MCP_LOG_LEVEL must be 'debug', 'info', 'warn' or 'error'")
 	}
 
+	stateless := false
+	statelessStr := os.Getenv("MCP_STATELESS")
+	if statelessStr != "" {
+		v, err := strconv.ParseBool(statelessStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse MCP_STATELESS: %w", err)
+		}
+		stateless = v
+	}
+
+	disableLocalhostProtection := false
+	disableLocalhostStr := os.Getenv("MCP_DISABLE_LOCALHOST_PROTECTION")
+	if disableLocalhostStr != "" {
+		v, err := strconv.ParseBool(disableLocalhostStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse MCP_DISABLE_LOCALHOST_PROTECTION: %w", err)
+		}
+		disableLocalhostProtection = v
+	}
+
 	result := &Config{
-		serverMode:         strings.ToLower(os.Getenv("MCP_SERVER_MODE")),
-		listenAddr:         os.Getenv("MCP_LISTEN_ADDR"),
-		entrypoint:         os.Getenv("VL_INSTANCE_ENTRYPOINT"),
-		bearerToken:        os.Getenv("VL_INSTANCE_BEARER_TOKEN"),
-		customHeaders:      customHeadersMap,
-		passthroughHeaders: passthroughHeaders,
-		disabledTools:      disabledToolsMap,
-		heartbeatInterval:  heartbeatInterval,
-		logFormat:          logFormat,
-		logLevel:           logLevel,
-		defaultTenantID:    logstorage.TenantID{AccountID: 0, ProjectID: 0},
+		serverMode:                 strings.ToLower(os.Getenv("MCP_SERVER_MODE")),
+		listenAddr:                 os.Getenv("MCP_LISTEN_ADDR"),
+		entrypoint:                 os.Getenv("VL_INSTANCE_ENTRYPOINT"),
+		bearerToken:                os.Getenv("VL_INSTANCE_BEARER_TOKEN"),
+		customHeaders:              customHeadersMap,
+		passthroughHeaders:         passthroughHeaders,
+		disabledTools:              disabledToolsMap,
+		heartbeatInterval:          heartbeatInterval,
+		logFormat:                  logFormat,
+		logLevel:                   logLevel,
+		defaultTenantID:            logstorage.TenantID{AccountID: 0, ProjectID: 0},
+		stateless:                  stateless,
+		disableLocalhostProtection: disableLocalhostProtection,
+		authToken:                  os.Getenv("MCP_AUTH_TOKEN"),
 	}
 	// Left for backward compatibility
 	if result.listenAddr == "" {
@@ -144,7 +174,54 @@ func InitConfig() (*Config, error) {
 		return nil, fmt.Errorf("failed to parse URL from VL_INSTANCE_ENTRYPOINT: %w", err)
 	}
 
+	caCert := os.Getenv("VL_INSTANCE_CA_CERT")
+	caCertFile := os.Getenv("VL_INSTANCE_CA_CERT_FILE")
+	if caCert != "" && caCertFile != "" {
+		return nil, fmt.Errorf("VL_INSTANCE_CA_CERT and VL_INSTANCE_CA_CERT_FILE cannot be set at the same time")
+	}
+	// promauth would fetch http(s) URLs with no timeout and, for http, no integrity protection.
+	if u, err := url.Parse(caCertFile); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
+		return nil, fmt.Errorf("VL_INSTANCE_CA_CERT_FILE must be a local file path, got URL %q", caCertFile)
+	}
+	result.httpClient = http.DefaultClient
+	if caCert != "" || caCertFile != "" {
+		result.httpClient, err = newHTTPClientWithCA(caCert, caCertFile)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return result, nil
+}
+
+// newHTTPClientWithCA returns an HTTP client that verifies server certificates
+// against the PEM-encoded CA certificates from caCert or caCertFile
+// instead of the system root CAs.
+//
+// caCertFile is re-read at most once per second, so a rotated CA is picked up
+// without a restart.
+func newHTTPClientWithCA(caCert, caCertFile string) (*http.Client, error) {
+	// Some environments only accept single-line env var values,
+	// so literal "\n" sequences are treated as newlines.
+	if !strings.Contains(caCert, "\n") {
+		caCert = strings.ReplaceAll(caCert, `\n`, "\n")
+	}
+	opts := &promauth.Options{
+		TLSConfig: &promauth.TLSConfig{
+			CA:     caCert,
+			CAFile: caCertFile,
+		},
+	}
+	ac, err := opts.NewConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load VL_INSTANCE_CA_CERT: %w", err)
+	}
+	// Load the CA file once to fail at startup instead of on the first request.
+	if _, err := ac.GetTLSConfig(); err != nil {
+		return nil, fmt.Errorf("failed to load VL_INSTANCE_CA_CERT_FILE: %w", err)
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	return &http.Client{Transport: ac.NewRoundTripper(transport)}, nil
 }
 
 func (c *Config) IsStdio() bool {
@@ -183,6 +260,13 @@ func (c *Config) HeartbeatInterval() time.Duration {
 	return c.heartbeatInterval
 }
 
+// HTTPClient returns the client for requests to VictoriaLogs.
+// It trusts the CA certificates from VL_INSTANCE_CA_CERT or VL_INSTANCE_CA_CERT_FILE
+// when one of them is set, and is http.DefaultClient otherwise.
+func (c *Config) HTTPClient() *http.Client {
+	return c.httpClient
+}
+
 func (c *Config) CustomHeaders() map[string]string {
 	return c.customHeaders
 }
@@ -201,4 +285,18 @@ func (c *Config) LogLevel() string {
 
 func (c *Config) DefaultTenantID() logstorage.TenantID {
 	return c.defaultTenantID
+}
+
+func (c *Config) Stateless() bool {
+	return c.stateless
+}
+
+func (c *Config) DisableLocalhostProtection() bool {
+	return c.disableLocalhostProtection
+}
+
+// AuthToken returns the bearer token required on incoming MCP requests in sse/http modes.
+// Empty means authentication is disabled.
+func (c *Config) AuthToken() string {
+	return c.authToken
 }

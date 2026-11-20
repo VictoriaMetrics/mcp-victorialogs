@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/VictoriaMetrics/metrics"
 
+	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/auth"
 	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/config"
 	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/hooks"
 	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/logging"
@@ -38,6 +40,16 @@ const (
 )
 
 func main() {
+	// Use a dedicated FlagSet: VictoriaMetrics packages register their own
+	// flags (including -version) on flag.CommandLine.
+	fs := flag.NewFlagSet("mcp-victorialogs", flag.ExitOnError)
+	showVersion := fs.Bool("version", false, "Print version and exit")
+	_ = fs.Parse(os.Args[1:]) // ExitOnError: Parse exits on failure and never returns an error
+	if *showVersion {
+		fmt.Printf("mcp-victorialogs v%s (date: %s)\n", version, date)
+		return
+	}
+
 	c, err := config.InitConfig()
 	if err != nil {
 		log.Fatalf("FATAL: Error initializing config: %v\n", err)
@@ -153,7 +165,14 @@ Try not to second guess information - if you don't know something or lack inform
 		slog.Info("Starting server in HTTP mode", "addr", c.ListenAddr())
 		heartBeatOption := server.WithHeartbeatInterval(c.HeartbeatInterval())
 		loggerOption := server.WithStreamableHTTPLogger(logger.SlogLogger())
-		srv := server.NewStreamableHTTPServer(s, heartBeatOption, loggerOption)
+		opts := []server.StreamableHTTPOption{heartBeatOption, loggerOption}
+		if c.Stateless() {
+			opts = append(opts, server.WithStateLess(true))
+		}
+		if c.DisableLocalhostProtection() {
+			opts = append(opts, server.WithDisableLocalhostProtection(true))
+		}
+		srv := server.NewStreamableHTTPServer(s, opts...)
 		mux.Handle("/mcp", srv)
 		mux.Handle("/", spaHandler())
 	default:
@@ -161,9 +180,16 @@ Try not to second guess information - if you don't know something or lack inform
 	}
 
 	ongoingCtx, stopOngoingGracefully := context.WithCancel(context.Background())
+
+	var handler http.Handler = mux
+	if authToken := c.AuthToken(); authToken != "" {
+		slog.Info("Authentication enabled", "token_configured", true)
+		handler = auth.Middleware(authToken)(mux)
+	}
+	handler = logger.Middleware(handler)
 	hs := &http.Server{
 		Addr:    c.ListenAddr(),
-		Handler: logger.Middleware(mux),
+		Handler: handler,
 		BaseContext: func(_ net.Listener) context.Context {
 			return ongoingCtx
 		},

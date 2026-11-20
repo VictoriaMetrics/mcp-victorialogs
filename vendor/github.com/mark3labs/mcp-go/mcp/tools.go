@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"math/big"
 	"net/http"
 	"os"
 	"reflect"
@@ -146,12 +148,14 @@ func (p *CallToolParams) UnmarshalJSON(data []byte) error {
 	p.Meta = raw.Meta
 	p.Task = raw.Task
 	p.MultiRoundTripParams = raw.MultiRoundTripParams
+	p.Arguments = nil
+	p.RawArguments = nil
 
 	if len(raw.Arguments) == 0 {
 		return nil
 	}
 
-	p.RawArguments = append(json.RawMessage(nil), raw.Arguments...)
+	p.RawArguments = raw.Arguments
 	return json.Unmarshal(raw.Arguments, &p.Arguments)
 }
 
@@ -190,6 +194,53 @@ func (r CallToolRequest) RequireString(key string) (string, error) {
 	return "", fmt.Errorf("required argument %q not found", key)
 }
 
+// rawIntArgument parses an exact int argument from RawArguments when present.
+func (r CallToolRequest) rawIntArgument(key string) (int, bool) {
+	return parseRawInt(r.rawArgument(key))
+}
+
+func (r CallToolRequest) rawArgument(key string) json.RawMessage {
+	if len(r.Params.RawArguments) == 0 {
+		return nil
+	}
+	var rawMap map[string]json.RawMessage
+	if err := json.Unmarshal(r.Params.RawArguments, &rawMap); err != nil {
+		return nil
+	}
+	return rawMap[key]
+}
+
+func (r CallToolRequest) rawArgumentSlice(key string) []json.RawMessage {
+	var items []json.RawMessage
+	if err := json.Unmarshal(r.rawArgument(key), &items); err != nil {
+		return nil
+	}
+	return items
+}
+
+func parseRawInt(rawVal json.RawMessage) (int, bool) {
+	s := strings.TrimSpace(string(rawVal))
+	if i, err := strconv.Atoi(s); err == nil {
+		return i, true
+	}
+	if len(s) > 64 || !strings.ContainsAny(s, ".eE") {
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || (f > -1 && f < 1) || f < float64(math.MinInt) || f > float64(math.MaxInt) {
+		return 0, false
+	}
+	rat, ok := new(big.Rat).SetString(s)
+	if !ok || !rat.IsInt() {
+		return 0, false
+	}
+	i, err := strconv.Atoi(rat.Num().String())
+	if err != nil {
+		return 0, false
+	}
+	return i, true
+}
+
 // GetInt returns an int argument by key, or the default value if not found
 func (r CallToolRequest) GetInt(key string, defaultValue int) int {
 	args := r.GetArguments()
@@ -198,6 +249,9 @@ func (r CallToolRequest) GetInt(key string, defaultValue int) int {
 		case int:
 			return v
 		case float64:
+			if i, ok := r.rawIntArgument(key); ok {
+				return i
+			}
 			return int(v)
 		case string:
 			if i, err := strconv.Atoi(v); err == nil {
@@ -216,6 +270,9 @@ func (r CallToolRequest) RequireInt(key string) (int, error) {
 		case int:
 			return v, nil
 		case float64:
+			if i, ok := r.rawIntArgument(key); ok {
+				return i, nil
+			}
 			return int(v), nil
 		case string:
 			if i, err := strconv.Atoi(v); err == nil {
@@ -355,7 +412,8 @@ func (r CallToolRequest) RequireStringSlice(key string) ([]string, error) {
 	return nil, fmt.Errorf("required argument %q not found", key)
 }
 
-// GetIntSlice returns an int slice argument by key, or the default value if not found
+// GetIntSlice returns an int slice argument by key, or the default value if not found.
+// When raw JSON arguments are available, representable integer elements retain their exact values.
 func (r CallToolRequest) GetIntSlice(key string, defaultValue []int) []int {
 	args := r.GetArguments()
 	if val, ok := args[key]; ok {
@@ -363,12 +421,19 @@ func (r CallToolRequest) GetIntSlice(key string, defaultValue []int) []int {
 		case []int:
 			return v
 		case []any:
+			rawItems := r.rawArgumentSlice(key)
 			result := make([]int, 0, len(v))
-			for _, item := range v {
+			for i, item := range v {
 				switch num := item.(type) {
 				case int:
 					result = append(result, num)
 				case float64:
+					if i < len(rawItems) {
+						if exact, ok := parseRawInt(rawItems[i]); ok {
+							result = append(result, exact)
+							continue
+						}
+					}
 					result = append(result, int(num))
 				case string:
 					if i, err := strconv.Atoi(num); err == nil {
@@ -382,7 +447,8 @@ func (r CallToolRequest) GetIntSlice(key string, defaultValue []int) []int {
 	return defaultValue
 }
 
-// RequireIntSlice returns an int slice argument by key, or an error if not found or not convertible to int slice
+// RequireIntSlice returns an int slice argument by key, or an error if not found or not convertible to int slice.
+// When raw JSON arguments are available, representable integer elements retain their exact values.
 func (r CallToolRequest) RequireIntSlice(key string) ([]int, error) {
 	args := r.GetArguments()
 	if val, ok := args[key]; ok {
@@ -390,12 +456,19 @@ func (r CallToolRequest) RequireIntSlice(key string) ([]int, error) {
 		case []int:
 			return v, nil
 		case []any:
+			rawItems := r.rawArgumentSlice(key)
 			result := make([]int, 0, len(v))
 			for i, item := range v {
 				switch num := item.(type) {
 				case int:
 					result = append(result, num)
 				case float64:
+					if i < len(rawItems) {
+						if exact, ok := parseRawInt(rawItems[i]); ok {
+							result = append(result, exact)
+							continue
+						}
+					}
 					result = append(result, int(num))
 				case string:
 					if n, err := strconv.Atoi(num); err == nil {
@@ -562,7 +635,7 @@ func (r CallToolResult) MarshalJSON() ([]byte, error) {
 	m["content"] = content
 
 	// Marshal StructuredContent if present
-	if len(r.RawStructuredContent) > 0 {
+	if trimmed := bytes.TrimSpace(r.RawStructuredContent); len(trimmed) > 0 && (r.StructuredContent == nil || !bytes.Equal(trimmed, []byte("null"))) {
 		m["structuredContent"] = json.RawMessage(r.RawStructuredContent)
 	} else if r.StructuredContent != nil {
 		m["structuredContent"] = r.StructuredContent
@@ -608,7 +681,8 @@ func (r *CallToolResult) UnmarshalJSON(data []byte) error {
 	r.InputRequests = raw.InputRequests
 	r.RequestState = raw.RequestState
 
-	if len(raw.Content) > 0 {
+	r.Content = nil
+	if raw.Content != nil {
 		r.Content = make([]Content, len(raw.Content))
 		for i, item := range raw.Content {
 			content, err := UnmarshalContent(item)
@@ -619,6 +693,8 @@ func (r *CallToolResult) UnmarshalJSON(data []byte) error {
 		}
 	}
 
+	r.RawStructuredContent = nil
+	r.StructuredContent = nil
 	if len(raw.StructuredContent) > 0 {
 		r.RawStructuredContent = append(json.RawMessage(nil), raw.StructuredContent...)
 		if err := json.Unmarshal(raw.StructuredContent, &r.StructuredContent); err != nil {
@@ -705,7 +781,7 @@ func (t Tool) MarshalJSON() ([]byte, error) {
 
 	// Determine which input schema to use
 	if t.RawInputSchema != nil {
-		if t.InputSchema.Type != "" {
+		if t.InputSchema.Type != "" || t.InputSchema.Types != nil {
 			return nil, fmt.Errorf("tool %s has both InputSchema and RawInputSchema set: %w", t.Name, errToolSchemaConflict)
 		}
 		m["inputSchema"] = t.RawInputSchema
@@ -716,15 +792,17 @@ func (t Tool) MarshalJSON() ([]byte, error) {
 
 	// Add output schema if present
 	if t.RawOutputSchema != nil {
-		if t.OutputSchema.Type != "" {
+		if t.OutputSchema.Type != "" || t.OutputSchema.Types != nil {
 			return nil, fmt.Errorf("tool %s has both OutputSchema and RawOutputSchema set: %w", t.Name, errToolSchemaConflict)
 		}
 		m["outputSchema"] = t.RawOutputSchema
-	} else if t.OutputSchema.Type != "" { // If no output schema is specified, do not return anything
+	} else if t.OutputSchema.Type != "" || t.OutputSchema.Types != nil {
 		m["outputSchema"] = t.OutputSchema
 	}
 
-	m["annotations"] = t.Annotations
+	if t.Annotations != (ToolAnnotation{}) {
+		m["annotations"] = t.Annotations
+	}
 
 	if t.DeferLoading {
 		m["defer_loading"] = t.DeferLoading
@@ -748,11 +826,21 @@ func (t Tool) MarshalJSON() ([]byte, error) {
 
 // ToolArgumentsSchema represents a JSON Schema for tool arguments.
 type ToolArgumentsSchema struct {
-	Defs                 map[string]any `json:"$defs,omitempty"`
-	Type                 string         `json:"type"`
+	Defs map[string]any `json:"$defs,omitempty"`
+	Type string         `json:"type"`
+	// Types holds an array-valued JSON Schema type, including a single-element
+	// array. Type remains a string for compatibility and takes precedence when
+	// non-empty. Decoding a string clears Types; decoding an array clears Type.
+	Types                []string       `json:"-"`
 	Properties           map[string]any `json:"properties"`
 	Required             []string       `json:"required,omitempty"`
 	AdditionalProperties any            `json:"additionalProperties,omitempty"`
+	// AdditionalFields contains unmodeled top-level JSON Schema keywords.
+	// Modeled names (type, properties, required, additionalProperties and $defs)
+	// are reserved and cannot override structured fields, even when omitted.
+	// The distinct definitions container is retained here unless an undeclared
+	// legacy schema adopts it into Defs. Decoded numbers use json.Number.
+	AdditionalFields map[string]any `json:"-"`
 	// PropertyOrder is the marshal order of the top-level Properties keys.
 	// UnmarshalJSON sets it from the "properties" object. Names that are not
 	// in Properties are skipped, and keys that are not listed follow in
@@ -796,10 +884,28 @@ func (tis *ToolArgumentsSchema) UnmarshalJSON(data []byte) error {
 	return toolArgumentsSchemaUnmarshalJSON(data, tis)
 }
 
+// isModeledToolSchemaKeyword identifies names reserved for structured fields.
+func isModeledToolSchemaKeyword(key string) bool {
+	switch key {
+	case "type", "properties", "required", "additionalProperties", "$defs":
+		return true
+	default:
+		return false
+	}
+}
+
 // toolArgumentsSchemaMarshalJSON handles the fields stored in ToolArgumentsSchema when json.Marshaler is called
 func toolArgumentsSchemaMarshalJSON(tis ToolArgumentsSchema) ([]byte, error) {
-	m := make(map[string]any)
+	m := make(map[string]any, len(tis.AdditionalFields)+5)
+	for key, value := range tis.AdditionalFields {
+		if !isModeledToolSchemaKeyword(key) {
+			m[key] = value
+		}
+	}
 	m["type"] = tis.Type
+	if tis.Type == "" && tis.Types != nil {
+		m["type"] = tis.Types
+	}
 
 	if tis.Defs != nil {
 		m["$defs"] = tis.Defs
@@ -819,10 +925,13 @@ func toolArgumentsSchemaMarshalJSON(tis ToolArgumentsSchema) ([]byte, error) {
 		m["properties"] = map[string]any{}
 	}
 
-	// Marshal Required to '[]' rather than `nil` when its length equals zero
-	if len(tis.Required) > 0 {
+	// Marshal Required to '[]' rather than `nil` when its length equals zero,
+	// unless the schema declares draft-04 or earlier, where an empty
+	// "required" is invalid.
+	switch {
+	case len(tis.Required) > 0:
 		m["required"] = tis.Required
-	} else {
+	case !declaresDraft04OrEarlier(m["$schema"]):
 		m["required"] = []string{}
 	}
 
@@ -921,13 +1030,14 @@ func propertyOrder(raw json.RawMessage) []string {
 	return order
 }
 
-// It handles both "$defs" (JSON Schema 2019-09+) and "definitions" (JSON Schema draft-07)
-// by reading either field and storing it in the Defs field.
+// It preserves declared dialects and only normalizes legacy definitions to
+// Defs when no dialect or $defs is provided.
 func toolArgumentsSchemaUnmarshalJSON(data []byte, tis *ToolArgumentsSchema) error {
 	// Use a temporary type to avoid infinite recursion
 	type Alias ToolArgumentsSchema
 	aux := &struct {
-		Definitions map[string]any `json:"definitions,omitempty"`
+		Definitions json.RawMessage `json:"definitions,omitempty"`
+		Type        json.RawMessage `json:"type"`
 		// Properties shadows Alias.Properties so the raw bytes keep the key order.
 		Properties json.RawMessage `json:"properties"`
 		*Alias
@@ -938,6 +1048,24 @@ func toolArgumentsSchemaUnmarshalJSON(data []byte, tis *ToolArgumentsSchema) err
 	if err := json.Unmarshal(data, aux); err != nil {
 		return err
 	}
+	if err := unmarshalAdditionalSchemaKeywords(data, tis); err != nil {
+		return err
+	}
+	if len(aux.Type) > 0 {
+		if bytes.TrimSpace(aux.Type)[0] == '[' {
+			var types []string
+			if err := json.Unmarshal(aux.Type, &types); err != nil {
+				return fmt.Errorf("decode schema type array: %w", err)
+			}
+			tis.Type = ""
+			tis.Types = types
+		} else {
+			if err := json.Unmarshal(aux.Type, &tis.Type); err != nil {
+				return fmt.Errorf("decode schema type: %w", err)
+			}
+			tis.Types = nil
+		}
+	}
 
 	if aux.Properties != nil {
 		if err := json.Unmarshal(aux.Properties, &tis.Properties); err != nil {
@@ -946,36 +1074,105 @@ func toolArgumentsSchemaUnmarshalJSON(data []byte, tis *ToolArgumentsSchema) err
 		tis.PropertyOrder = propertyOrder(aux.Properties)
 	}
 
-	// If $defs wasn't provided but definitions was, use definitions.
-	// Marshaling re-emits Defs as "$defs", so local "#/definitions/..." $ref
-	// pointers must be rewritten to "#/$defs/..." or the round-tripped schema
-	// carries dangling references that strict validators reject.
-	if tis.Defs == nil && aux.Definitions != nil {
-		tis.Defs = aux.Definitions
-		rewriteDraft07LocalRefs(tis.Defs)
-		rewriteDraft07LocalRefs(tis.Properties)
+	// A declared dialect owns its keyword syntax, including unknown dialects.
+	// Without one, retain the compatibility normalization when there is no
+	// competing $defs container. Both containers may have independent refs.
+	_, declaredDialect := tis.AdditionalFields["$schema"]
+	if !declaredDialect && tis.Defs == nil && aux.Definitions != nil {
+		var definitions map[string]any
+		decoder := json.NewDecoder(bytes.NewReader(aux.Definitions))
+		decoder.UseNumber()
+		if err := decoder.Decode(&definitions); err != nil {
+			return err
+		}
+		if definitions == nil {
+			return nil
+		}
+		tis.Defs = definitions
+		delete(tis.AdditionalFields, "definitions")
+		for _, schema := range tis.Defs {
+			rewriteDraft07LocalRefs(schema)
+		}
+		for _, schema := range tis.Properties {
+			rewriteDraft07LocalRefs(schema)
+		}
 		rewriteDraft07LocalRefs(tis.AdditionalProperties)
+		rewriteDraft07LocalRefs(tis.AdditionalFields)
+		if len(tis.AdditionalFields) == 0 {
+			tis.AdditionalFields = nil
+		}
 	}
 
 	return nil
 }
 
+// declaresDraft04OrEarlier reports whether a $schema value names JSON Schema
+// draft-04 or earlier, where "required" needs at least one element.
+func declaresDraft04OrEarlier(schema any) bool {
+	uri, _ := schema.(string)
+	return strings.Contains(uri, "json-schema.org/draft-04/") || strings.Contains(uri, "json-schema.org/draft-03/")
+}
+
+// unmarshalAdditionalSchemaKeywords stores the top-level keywords of a schema
+// that ToolArgumentsSchema has no field for in AdditionalFields.
+func unmarshalAdditionalSchemaKeywords(data []byte, tis *ToolArgumentsSchema) error {
+	var keywords map[string]json.RawMessage
+	if err := json.Unmarshal(data, &keywords); err != nil {
+		return err
+	}
+	if keywords == nil { // JSON null, which leaves the schema as it is
+		return nil
+	}
+	for _, known := range []string{"$defs", "type", "properties", "required", "additionalProperties"} {
+		delete(keywords, known)
+	}
+	if len(keywords) == 0 {
+		tis.AdditionalFields = nil
+		return nil
+	}
+	tis.AdditionalFields = make(map[string]any, len(keywords))
+	for name, raw := range keywords {
+		var value any
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		tis.AdditionalFields[name] = value
+	}
+	return nil
+}
+
 // rewriteDraft07LocalRefs rewrites local draft-07 "#/definitions/..." $ref
-// pointers to their 2019-09+ "#/$defs/..." equivalent in place. It walks
-// nested maps and slices; non-local refs are left untouched.
+// pointers to their 2019-09+ "#/$defs/..." equivalent in schema positions.
+// Annotation values and unknown extension keywords are left untouched.
 func rewriteDraft07LocalRefs(node any) {
 	const draft07Prefix = "#/definitions/"
-	switch v := node.(type) {
-	case map[string]any:
-		if ref, ok := v["$ref"].(string); ok && strings.HasPrefix(ref, draft07Prefix) {
-			v["$ref"] = "#/$defs/" + ref[len(draft07Prefix):]
-		}
-		for _, child := range v {
-			rewriteDraft07LocalRefs(child)
-		}
-	case []any:
-		for _, child := range v {
-			rewriteDraft07LocalRefs(child)
+	schema, ok := node.(map[string]any)
+	if !ok {
+		return
+	}
+	if ref, ok := schema["$ref"].(string); ok && strings.HasPrefix(ref, draft07Prefix) {
+		schema["$ref"] = "#/$defs/" + ref[len(draft07Prefix):]
+	}
+	for keyword, value := range schema {
+		switch keyword {
+		case "properties", "patternProperties", "$defs", "definitions", "dependentSchemas", "dependencies":
+			if children, ok := value.(map[string]any); ok {
+				for _, child := range children {
+					rewriteDraft07LocalRefs(child)
+				}
+			}
+		case "additionalProperties", "additionalItems", "contains", "propertyNames", "not", "if", "then", "else", "unevaluatedProperties", "unevaluatedItems", "contentSchema":
+			rewriteDraft07LocalRefs(value)
+		case "items", "allOf", "anyOf", "oneOf", "prefixItems":
+			if children, ok := value.([]any); ok {
+				for _, child := range children {
+					rewriteDraft07LocalRefs(child)
+				}
+			} else if keyword == "items" {
+				rewriteDraft07LocalRefs(value)
+			}
 		}
 	}
 }
@@ -1089,6 +1286,7 @@ func WithInputSchema[T any]() ToolOption {
 		}
 
 		t.InputSchema.Type = ""
+		t.InputSchema.Types = nil
 		t.RawInputSchema = json.RawMessage(mcpSchema)
 	}
 }
@@ -1120,6 +1318,10 @@ func WithTaskSupport(support TaskSupport) ToolOption {
 // check that out before using this.
 func WithRawInputSchema(schema json.RawMessage) ToolOption {
 	return func(t *Tool) {
+		if schema != nil {
+			t.InputSchema.Type = ""
+			t.InputSchema.Types = nil
+		}
 		t.RawInputSchema = schema
 	}
 }
@@ -1139,9 +1341,11 @@ func WithOutputSchema[T any]() ToolOption {
 			return
 		}
 
-		if err := json.Unmarshal(mcpSchema, &t.OutputSchema); err != nil {
+		var outputSchema ToolOutputSchema
+		if err := json.Unmarshal(mcpSchema, &outputSchema); err != nil {
 			return
 		}
+		t.OutputSchema = outputSchema
 
 		// Always set the type to "object" as of the current MCP spec
 		// https://modelcontextprotocol.io/specification/2025-06-18/server/tools#output-schema
@@ -1160,6 +1364,15 @@ func WithOutputSchema[T any]() ToolOption {
 func WithRawOutputSchema(schema json.RawMessage) ToolOption {
 	return func(t *Tool) {
 		t.RawOutputSchema = schema
+	}
+}
+
+// WithoutDefaultAnnotations clears the default hints that NewTool sets, so the
+// tool sends no annotations unless later options set some. Place it before
+// any other annotation option, since it clears those set before it.
+func WithoutDefaultAnnotations() ToolOption {
+	return func(t *Tool) {
+		t.Annotations = ToolAnnotation{}
 	}
 }
 
@@ -1355,6 +1568,16 @@ func DefaultArray[T any](value []T) PropertyOption {
 // Property Type Helpers
 //
 
+func setInputProperty(input *ToolInputSchema, name string, schema map[string]any) {
+	if required, ok := schema["required"].(bool); ok && required {
+		delete(schema, "required")
+		if !slices.Contains(input.Required, name) {
+			input.Required = append(input.Required, name)
+		}
+	}
+	input.Properties[name] = schema
+}
+
 // WithInteger adds an integer property to the tool schema.
 // It accepts property options to configure the integer property's behavior and constraints.
 func WithInteger(name string, opts ...PropertyOption) ToolOption {
@@ -1367,13 +1590,7 @@ func WithInteger(name string, opts ...PropertyOption) ToolOption {
 			opt(schema)
 		}
 
-		// Remove required from property schema and add to InputSchema.required
-		if required, ok := schema["required"].(bool); ok && required {
-			delete(schema, "required")
-			t.InputSchema.Required = append(t.InputSchema.Required, name)
-		}
-
-		t.InputSchema.Properties[name] = schema
+		setInputProperty(&t.InputSchema, name, schema)
 	}
 }
 
@@ -1389,13 +1606,7 @@ func WithBoolean(name string, opts ...PropertyOption) ToolOption {
 			opt(schema)
 		}
 
-		// Remove required from property schema and add to InputSchema.required
-		if required, ok := schema["required"].(bool); ok && required {
-			delete(schema, "required")
-			t.InputSchema.Required = append(t.InputSchema.Required, name)
-		}
-
-		t.InputSchema.Properties[name] = schema
+		setInputProperty(&t.InputSchema, name, schema)
 	}
 }
 
@@ -1411,13 +1622,7 @@ func WithNumber(name string, opts ...PropertyOption) ToolOption {
 			opt(schema)
 		}
 
-		// Remove required from property schema and add to InputSchema.required
-		if required, ok := schema["required"].(bool); ok && required {
-			delete(schema, "required")
-			t.InputSchema.Required = append(t.InputSchema.Required, name)
-		}
-
-		t.InputSchema.Properties[name] = schema
+		setInputProperty(&t.InputSchema, name, schema)
 	}
 }
 
@@ -1433,13 +1638,7 @@ func WithString(name string, opts ...PropertyOption) ToolOption {
 			opt(schema)
 		}
 
-		// Remove required from property schema and add to InputSchema.required
-		if required, ok := schema["required"].(bool); ok && required {
-			delete(schema, "required")
-			t.InputSchema.Required = append(t.InputSchema.Required, name)
-		}
-
-		t.InputSchema.Properties[name] = schema
+		setInputProperty(&t.InputSchema, name, schema)
 	}
 }
 
@@ -1456,13 +1655,7 @@ func WithObject(name string, opts ...PropertyOption) ToolOption {
 			opt(schema)
 		}
 
-		// Remove required from property schema and add to InputSchema.required
-		if required, ok := schema["required"].(bool); ok && required {
-			delete(schema, "required")
-			t.InputSchema.Required = append(t.InputSchema.Required, name)
-		}
-
-		t.InputSchema.Properties[name] = schema
+		setInputProperty(&t.InputSchema, name, schema)
 	}
 }
 
@@ -1480,13 +1673,7 @@ func WithArray(name string, opts ...PropertyOption) ToolOption {
 			opt(schema)
 		}
 
-		// Remove required from property schema and add to InputSchema.required
-		if required, ok := schema["required"].(bool); ok && required {
-			delete(schema, "required")
-			t.InputSchema.Required = append(t.InputSchema.Required, name)
-		}
-
-		t.InputSchema.Properties[name] = schema
+		setInputProperty(&t.InputSchema, name, schema)
 	}
 }
 
@@ -1501,13 +1688,7 @@ func WithAny(name string, opts ...PropertyOption) ToolOption {
 			opt(schema)
 		}
 
-		// Remove required from property schema and add to InputSchema.required
-		if required, ok := schema["required"].(bool); ok && required {
-			delete(schema, "required")
-			t.InputSchema.Required = append(t.InputSchema.Required, name)
-		}
-
-		t.InputSchema.Properties[name] = schema
+		setInputProperty(&t.InputSchema, name, schema)
 	}
 }
 
@@ -1602,17 +1783,7 @@ func UniqueItems(unique bool) PropertyOption {
 //
 // Limitations: Only supports simple string arrays. Use Items() for complex objects.
 func WithStringItems(opts ...PropertyOption) PropertyOption {
-	return func(schema map[string]any) {
-		itemSchema := map[string]any{
-			"type": "string",
-		}
-
-		for _, opt := range opts {
-			opt(itemSchema)
-		}
-
-		schema["items"] = itemSchema
-	}
+	return primitiveItems("string", opts)
 }
 
 // WithStringEnumItems configures an array's items to be of type string with a specified enum.
@@ -1642,17 +1813,7 @@ func WithStringEnumItems(values []string) PropertyOption {
 //
 // Limitations: Only supports simple number arrays. Use Items() for complex objects.
 func WithNumberItems(opts ...PropertyOption) PropertyOption {
-	return func(schema map[string]any) {
-		itemSchema := map[string]any{
-			"type": "number",
-		}
-
-		for _, opt := range opts {
-			opt(itemSchema)
-		}
-
-		schema["items"] = itemSchema
-	}
+	return primitiveItems("number", opts)
 }
 
 // WithIntegerItems configures an array's items to be of type integer.
@@ -1667,21 +1828,7 @@ func WithNumberItems(opts ...PropertyOption) PropertyOption {
 //
 // Limitations: Only supports simple integer arrays. Use Items() for complex objects.
 func WithIntegerItems(opts ...PropertyOption) PropertyOption {
-	return func(schema map[string]any) {
-		itemSchema := map[string]any{
-			"type": "integer",
-		}
-
-		for _, opt := range opts {
-			opt(itemSchema)
-		}
-
-		if required, ok := itemSchema["required"].(bool); ok && required {
-			delete(itemSchema, "required")
-		}
-
-		schema["items"] = itemSchema
-	}
+	return primitiveItems("integer", opts)
 }
 
 // WithBooleanItems configures an array's items to be of type boolean.
@@ -1696,15 +1843,18 @@ func WithIntegerItems(opts ...PropertyOption) PropertyOption {
 //
 // Limitations: Only supports simple boolean arrays. Use Items() for complex objects.
 func WithBooleanItems(opts ...PropertyOption) PropertyOption {
+	return primitiveItems("boolean", opts)
+}
+
+func primitiveItems(kind string, opts []PropertyOption) PropertyOption {
 	return func(schema map[string]any) {
-		itemSchema := map[string]any{
-			"type": "boolean",
-		}
-
+		items := map[string]any{"type": kind}
 		for _, opt := range opts {
-			opt(itemSchema)
+			opt(items)
 		}
-
-		schema["items"] = itemSchema
+		if required, ok := items["required"].(bool); ok && required {
+			delete(items, "required")
+		}
+		schema["items"] = items
 	}
 }
