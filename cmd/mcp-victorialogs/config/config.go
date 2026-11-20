@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,15 +12,17 @@ import (
 )
 
 type Config struct {
-	serverMode         string
-	listenAddr         string
-	entrypoint         string
-	bearerToken        string
-	customHeaders      map[string]string
-	passthroughHeaders []string
-	disabledTools      map[string]bool
-	heartbeatInterval  time.Duration
-	defaultTenantID    logstorage.TenantID
+	serverMode                 string
+	listenAddr                 string
+	entrypoint                 string
+	bearerToken                string
+	customHeaders              map[string]string
+	passthroughHeaders         []string
+	disabledTools              map[string]bool
+	heartbeatInterval          time.Duration
+	defaultTenantID            logstorage.TenantID
+	stateless                  bool
+	disableLocalhostProtection bool
 
 	entryPointURL *url.URL
 
@@ -98,18 +101,40 @@ func InitConfig() (*Config, error) {
 		return nil, fmt.Errorf("MCP_LOG_LEVEL must be 'debug', 'info', 'warn' or 'error'")
 	}
 
+	stateless := false
+	statelessStr := os.Getenv("MCP_STATELESS")
+	if statelessStr != "" {
+		v, err := strconv.ParseBool(statelessStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse MCP_STATELESS: %w", err)
+		}
+		stateless = v
+	}
+
+	disableLocalhostProtection := false
+	disableLocalhostStr := os.Getenv("MCP_DISABLE_LOCALHOST_PROTECTION")
+	if disableLocalhostStr != "" {
+		v, err := strconv.ParseBool(disableLocalhostStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse MCP_DISABLE_LOCALHOST_PROTECTION: %w", err)
+		}
+		disableLocalhostProtection = v
+	}
+
 	result := &Config{
-		serverMode:         strings.ToLower(os.Getenv("MCP_SERVER_MODE")),
-		listenAddr:         os.Getenv("MCP_LISTEN_ADDR"),
-		entrypoint:         os.Getenv("VL_INSTANCE_ENTRYPOINT"),
-		bearerToken:        os.Getenv("VL_INSTANCE_BEARER_TOKEN"),
-		customHeaders:      customHeadersMap,
-		passthroughHeaders: passthroughHeaders,
-		disabledTools:      disabledToolsMap,
-		heartbeatInterval:  heartbeatInterval,
-		logFormat:          logFormat,
-		logLevel:           logLevel,
-		defaultTenantID:    logstorage.TenantID{AccountID: 0, ProjectID: 0},
+		serverMode:                 strings.ToLower(os.Getenv("MCP_SERVER_MODE")),
+		listenAddr:                 os.Getenv("MCP_LISTEN_ADDR"),
+		entrypoint:                 os.Getenv("VL_INSTANCE_ENTRYPOINT"),
+		bearerToken:                os.Getenv("VL_INSTANCE_BEARER_TOKEN"),
+		customHeaders:              customHeadersMap,
+		passthroughHeaders:         passthroughHeaders,
+		disabledTools:              disabledToolsMap,
+		heartbeatInterval:          heartbeatInterval,
+		logFormat:                  logFormat,
+		logLevel:                   logLevel,
+		defaultTenantID:            logstorage.TenantID{AccountID: 0, ProjectID: 0},
+		stateless:                  stateless,
+		disableLocalhostProtection: disableLocalhostProtection,
 	}
 	// Left for backward compatibility
 	if result.listenAddr == "" {
@@ -201,4 +226,12 @@ func (c *Config) LogLevel() string {
 
 func (c *Config) DefaultTenantID() logstorage.TenantID {
 	return c.defaultTenantID
+}
+
+func (c *Config) Stateless() bool {
+	return c.stateless
+}
+
+func (c *Config) DisableLocalhostProtection() bool {
+	return c.disableLocalhostProtection
 }
