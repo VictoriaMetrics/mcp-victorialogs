@@ -19,6 +19,7 @@ import (
 
 	"github.com/VictoriaMetrics/metrics"
 
+	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/auth"
 	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/config"
 	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/hooks"
 	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/logging"
@@ -179,9 +180,16 @@ Try not to second guess information - if you don't know something or lack inform
 	}
 
 	ongoingCtx, stopOngoingGracefully := context.WithCancel(context.Background())
+
+	var handler http.Handler = mux
+	if authToken := c.AuthToken(); authToken != "" {
+		slog.Info("Authentication enabled", "token_configured", true)
+		handler = auth.Middleware(authToken)(mux)
+	}
+	handler = logger.Middleware(handler)
 	hs := &http.Server{
 		Addr:    c.ListenAddr(),
-		Handler: logger.Middleware(mux),
+		Handler: handler,
 		BaseContext: func(_ net.Listener) context.Context {
 			return ongoingCtx
 		},

@@ -84,6 +84,7 @@ docker run -d --name mcp-victorialogs \
   -e VL_INSTANCE_ENTRYPOINT=https://play-vmlogs.victoriametrics.com \
   -e MCP_SERVER_MODE=http \
   -e MCP_LISTEN_ADDR=:8081 \
+  -e MCP_AUTH_TOKEN=your-secret-token \
   -p 8081:8081 \
   ghcr.io/victoriametrics/mcp-victorialogs
 ```
@@ -146,6 +147,7 @@ MCP Server for VictoriaLogs is configured via environment variables:
 | `MCP_LOG_LEVEL`                    | Minimum log level                                                                                                                                                                                                                                                     | No       | `info`           | `debug`, `info`, `warn`, `error` |
 | `MCP_STATELESS`                    | Run the Streamable HTTP server in stateless mode: session IDs in the `Mcp-Session-Id` header are ignored rather than validated. Useful when the server is fronted by a proxy that injects its own session id. Only applies in `http` mode.                            | No       | `false`          | `true`, `false`                  |
 | `MCP_DISABLE_LOCALHOST_PROTECTION` | Disable the DNS-rebinding guard that rejects a loopback request whose `Host` header is not a localhost value with 403. Needed when a same-host reverse proxy forwards requests over 127.0.0.1 while preserving the original Host header. Only applies in `http` mode. | No       | `false`          | `true`, `false`                  |
+| `MCP_AUTH_TOKEN`                   | Bearer token for authenticating incoming MCP requests. Clients must send `Authorization: Bearer <token>`. Public paths (`/health/*`, `/metrics`, `/`, static assets) are excluded from authentication. Only applies in `sse`/`http` modes.                            | No       | -                | -                                |
 
 ### Modes
 
@@ -172,6 +174,9 @@ More info about transports you can find in MCP docs:
 ```bash
 # For a public playground
 export VL_INSTANCE_ENTRYPOINT="https://play-vmlogs.victoriametrics.com"
+
+# Require clients to send "Authorization: Bearer <token>" (optional, only for sse/http modes)
+export MCP_AUTH_TOKEN="your-secret-token"
 
 # Custom headers for authentication (e.g., behind a reverse proxy)
 # Expected syntax is key=value separated by commas

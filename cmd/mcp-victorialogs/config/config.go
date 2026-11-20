@@ -25,6 +25,7 @@ type Config struct {
 	defaultTenantID            logstorage.TenantID
 	stateless                  bool
 	disableLocalhostProtection bool
+	authToken                  string
 
 	entryPointURL *url.URL
 	httpClient    *http.Client
@@ -138,6 +139,7 @@ func InitConfig() (*Config, error) {
 		defaultTenantID:            logstorage.TenantID{AccountID: 0, ProjectID: 0},
 		stateless:                  stateless,
 		disableLocalhostProtection: disableLocalhostProtection,
+		authToken:                  os.Getenv("MCP_AUTH_TOKEN"),
 	}
 	// Left for backward compatibility
 	if result.listenAddr == "" {
@@ -291,4 +293,10 @@ func (c *Config) Stateless() bool {
 
 func (c *Config) DisableLocalhostProtection() bool {
 	return c.disableLocalhostProtection
+}
+
+// AuthToken returns the bearer token required on incoming MCP requests in sse/http modes.
+// Empty means authentication is disabled.
+func (c *Config) AuthToken() string {
+	return c.authToken
 }

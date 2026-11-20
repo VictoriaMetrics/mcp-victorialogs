@@ -18,6 +18,7 @@ func TestInitConfig(t *testing.T) {
 	originalPassthroughHeaders := os.Getenv("MCP_PASSTHROUGH_HEADERS")
 	originalStateless := os.Getenv("MCP_STATELESS")
 	originalDisableLocalhost := os.Getenv("MCP_DISABLE_LOCALHOST_PROTECTION")
+	originalAuthToken := os.Getenv("MCP_AUTH_TOKEN")
 
 	// Restore environment variables after test
 	defer func() {
@@ -30,6 +31,7 @@ func TestInitConfig(t *testing.T) {
 		os.Setenv("MCP_PASSTHROUGH_HEADERS", originalPassthroughHeaders)
 		os.Setenv("MCP_STATELESS", originalStateless)
 		os.Setenv("MCP_DISABLE_LOCALHOST_PROTECTION", originalDisableLocalhost)
+		os.Setenv("MCP_AUTH_TOKEN", originalAuthToken)
 	}()
 
 	// Test case 1: Valid configuration
@@ -461,6 +463,35 @@ func TestInitConfig(t *testing.T) {
 		_, err := InitConfig()
 		if err == nil {
 			t.Fatal("Expected error for invalid MCP_DISABLE_LOCALHOST_PROTECTION, got nil")
+		}
+	})
+
+	// Test case: AuthToken - default (unset) is empty
+	t.Run("AuthToken default empty", func(t *testing.T) {
+		os.Setenv("VL_INSTANCE_ENTRYPOINT", "http://example.com")
+		os.Setenv("MCP_DISABLE_LOCALHOST_PROTECTION", "")
+		os.Setenv("MCP_AUTH_TOKEN", "")
+
+		cfg, err := InitConfig()
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+		if cfg.AuthToken() != "" {
+			t.Errorf("Expected empty AuthToken(), got: %q", cfg.AuthToken())
+		}
+	})
+
+	// Test case: AuthToken - explicitly set
+	t.Run("AuthToken set", func(t *testing.T) {
+		os.Setenv("VL_INSTANCE_ENTRYPOINT", "http://example.com")
+		os.Setenv("MCP_AUTH_TOKEN", "mcp-secret")
+
+		cfg, err := InitConfig()
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+		if cfg.AuthToken() != "mcp-secret" {
+			t.Errorf("Expected AuthToken() 'mcp-secret', got: %q", cfg.AuthToken())
 		}
 	})
 }
