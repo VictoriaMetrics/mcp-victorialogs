@@ -78,7 +78,10 @@ func SearchDocResources(query string, limit int) ([]mcp.Resource, error) {
 		return nil, fmt.Errorf("no results found for query: %s", query)
 	}
 	results := make([]mcp.Resource, 0)
-	for _, hit := range searchResults.Hits[:limit] {
+    for _, hit := range searchResults.Hits {
+	   	if len(results) >= limit {
+			break
+		}
 		resource, ok := resources[hit.ID]
 		if !ok {
 			continue
