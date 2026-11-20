@@ -693,9 +693,27 @@ func (ac *arrayContainer) andNot(a container) container {
 }
 
 func (ac *arrayContainer) andNotRun16(rc *runContainer16) container {
-	acb := ac.toBitmapContainer()
-	rcb := rc.toBitmapContainer()
-	return acb.andNotBitmap(rcb)
+	if len(rc.iv) == 1 {
+		return ac.andNotInterval(rc.iv[0])
+	}
+	return ac.clone().(*arrayContainer).iandNotRun16(rc)
+}
+
+func (ac *arrayContainer) andNotInterval(iv interval16) container {
+	start := binarySearch(ac.content, iv.start)
+	if start < 0 {
+		start = -start - 1
+	}
+	end := binarySearch(ac.content, iv.last())
+	if end < 0 {
+		end = -end - 1
+	} else {
+		end++
+	}
+	answer := newArrayContainerSize(start + len(ac.content) - end)
+	copy(answer.content, ac.content[:start])
+	copy(answer.content[start:], ac.content[end:])
+	return answer
 }
 
 func (ac *arrayContainer) iandNot(a container) container {
@@ -763,6 +781,14 @@ func (ac *arrayContainer) iandNotRun16(rc *runContainer16) container {
 }
 
 func (ac *arrayContainer) andNotArray(value2 *arrayContainer) container {
+	if len(value2.content) > 0 {
+		start := value2.content[0]
+		last := value2.content[len(value2.content)-1]
+		if int(last)-int(start)+1 == len(value2.content) {
+			return ac.andNotInterval(interval16{start: start, length: uint16(len(value2.content) - 1)})
+		}
+	}
+
 	value1 := ac
 	desiredcapacity := value1.getCardinality()
 	answer := newArrayContainerCapacity(desiredcapacity)
@@ -961,6 +987,29 @@ func (ac *arrayContainer) rank(x uint16) int {
 		return answer + 1
 	}
 	return -answer - 1
+}
+
+// getCardinalityInRange returns the number of values in the half-open range [start, end).
+func (ac *arrayContainer) getCardinalityInRange(start, end uint) int {
+	if start >= end {
+		return 0
+	}
+	// Find the first index >= start
+	loIdx := binarySearch(ac.content, uint16(start))
+	if loIdx < 0 {
+		loIdx = -loIdx - 1
+	}
+	// end can be up to 65536 (1<<16), which overflows uint16.
+	// In that case, all elements from loIdx onward are included.
+	if end > MaxUint16 {
+		return len(ac.content) - loIdx
+	}
+	// Find the first index >= end (i.e., past the last included value)
+	hiIdx := binarySearch(ac.content, uint16(end))
+	if hiIdx < 0 {
+		hiIdx = -hiIdx - 1
+	}
+	return hiIdx - loIdx
 }
 
 func (ac *arrayContainer) selectInt(x uint16) int {
@@ -1315,7 +1364,7 @@ func (ac *arrayContainer) addOffset(x uint16) (container, container) {
 	return low, high
 }
 
-// validate checks cardinality and sort order of the array container
+// validate checks cardinality and that content is strictly increasing
 func (ac *arrayContainer) validate() error {
 	cardinality := ac.getCardinality()
 
@@ -1330,7 +1379,7 @@ func (ac *arrayContainer) validate() error {
 	previous := ac.content[0]
 	for i := 1; i < len(ac.content); i++ {
 		next := ac.content[i]
-		if previous > next {
+		if previous >= next {
 			return ErrArrayIncorrectSort
 		}
 		previous = next
