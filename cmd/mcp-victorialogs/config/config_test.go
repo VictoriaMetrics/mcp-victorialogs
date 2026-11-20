@@ -495,3 +495,25 @@ func TestInitConfig(t *testing.T) {
 		}
 	})
 }
+
+func TestInitConfigInstructionsOverride(t *testing.T) {
+	t.Setenv("VL_INSTANCE_ENTRYPOINT", "http://example.com")
+
+	t.Setenv("MCP_INSTRUCTIONS_OVERRIDE", "")
+	cfg, err := InitConfig()
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if cfg.InstructionsOverride() != "" {
+		t.Errorf("Expected empty instructions override, got: %q", cfg.InstructionsOverride())
+	}
+
+	t.Setenv("MCP_INSTRUCTIONS_OVERRIDE", "  This instance stores production logs.\n")
+	cfg, err = InitConfig()
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if expected := "This instance stores production logs."; cfg.InstructionsOverride() != expected {
+		t.Errorf("Expected instructions override %q, got: %q", expected, cfg.InstructionsOverride())
+	}
+}

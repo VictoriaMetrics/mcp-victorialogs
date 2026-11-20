@@ -26,6 +26,7 @@ type Config struct {
 	stateless                  bool
 	disableLocalhostProtection bool
 	authToken                  string
+	instructionsOverride       string
 
 	entryPointURL *url.URL
 	httpClient    *http.Client
@@ -140,6 +141,7 @@ func InitConfig() (*Config, error) {
 		stateless:                  stateless,
 		disableLocalhostProtection: disableLocalhostProtection,
 		authToken:                  os.Getenv("MCP_AUTH_TOKEN"),
+		instructionsOverride:       strings.TrimSpace(os.Getenv("MCP_INSTRUCTIONS_OVERRIDE")),
 	}
 	// Left for backward compatibility
 	if result.listenAddr == "" {
@@ -299,4 +301,10 @@ func (c *Config) DisableLocalhostProtection() bool {
 // Empty means authentication is disabled.
 func (c *Config) AuthToken() string {
 	return c.authToken
+}
+
+// InstructionsOverride returns text that replaces the default MCP server instructions.
+// Empty means the default instructions are used.
+func (c *Config) InstructionsOverride() string {
+	return c.instructionsOverride
 }
