@@ -26,9 +26,12 @@ github.com/VictoriaMetrics/VictoriaMetrics/lib/flagutil
 github.com/VictoriaMetrics/VictoriaMetrics/lib/fs
 github.com/VictoriaMetrics/VictoriaMetrics/lib/fs/fscore
 github.com/VictoriaMetrics/VictoriaMetrics/lib/fs/fsutil
+github.com/VictoriaMetrics/VictoriaMetrics/lib/httputil
 github.com/VictoriaMetrics/VictoriaMetrics/lib/logger
 github.com/VictoriaMetrics/VictoriaMetrics/lib/memory
 github.com/VictoriaMetrics/VictoriaMetrics/lib/mergeset
+github.com/VictoriaMetrics/VictoriaMetrics/lib/netutil
+github.com/VictoriaMetrics/VictoriaMetrics/lib/promauth
 github.com/VictoriaMetrics/VictoriaMetrics/lib/regexutil
 github.com/VictoriaMetrics/VictoriaMetrics/lib/slicesutil
 github.com/VictoriaMetrics/VictoriaMetrics/lib/snapshot/snapshotutil
@@ -255,6 +258,11 @@ go.etcd.io/bbolt
 go.etcd.io/bbolt/errors
 go.etcd.io/bbolt/internal/common
 go.etcd.io/bbolt/internal/freelist
+# golang.org/x/oauth2 v0.38.0
+## explicit; go 1.26.0
+golang.org/x/oauth2
+golang.org/x/oauth2/clientcredentials
+golang.org/x/oauth2/internal
 # golang.org/x/sys v0.50.0
 ## explicit; go 1.26.0
 golang.org/x/sys/cpu

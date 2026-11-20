@@ -4,6 +4,7 @@ go 1.27.4
 
 require (
 	github.com/VictoriaMetrics/VictoriaLogs v1.54.1-0.20261114122617-2a63b8796d28
+	github.com/VictoriaMetrics/VictoriaMetrics v1.156.0
 	github.com/VictoriaMetrics/metrics v1.45.0
 	github.com/blevesearch/bleve/v2 v2.6.3
 	github.com/mark3labs/mcp-go v1.6.0
@@ -12,7 +13,6 @@ require (
 
 require (
 	github.com/RoaringBitmap/roaring/v2 v2.30.0 // indirect
-	github.com/VictoriaMetrics/VictoriaMetrics v1.156.0 // indirect
 	github.com/VictoriaMetrics/metricsql v0.87.6 // indirect
 	github.com/bits-and-blooms/bitset v1.30.0 // indirect
 	github.com/blevesearch/bleve_index_api v1.4.1 // indirect
@@ -59,6 +59,7 @@ require (
 	gitlab.com/golang-commonmark/mdurl v0.0.0-20191124015652-932350d1cb84 // indirect
 	gitlab.com/golang-commonmark/puny v0.0.0-20191124015043-9f83538fa04f // indirect
 	go.etcd.io/bbolt v1.5.0 // indirect
+	golang.org/x/oauth2 v0.38.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect

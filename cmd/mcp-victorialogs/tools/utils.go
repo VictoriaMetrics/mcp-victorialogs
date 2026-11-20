@@ -97,8 +97,8 @@ func getSelectURL(_ context.Context, cfg *config.Config, _ mcp.CallToolRequest, 
 	return cfg.EntryPointURL().JoinPath("select", "logsql").JoinPath(path...).String(), nil
 }
 
-func GetTextBodyForRequest(req *http.Request, _ *config.Config) *mcp.CallToolResult {
-	resp, err := http.DefaultClient.Do(req)
+func GetTextBodyForRequest(req *http.Request, cfg *config.Config) *mcp.CallToolResult {
+	resp, err := cfg.HTTPClient().Do(req)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to do request: %v", err))
 	}
