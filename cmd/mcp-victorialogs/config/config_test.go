@@ -1,6 +1,8 @@
 package config
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"testing"
@@ -515,5 +517,70 @@ func TestInitConfigInstructionsOverride(t *testing.T) {
 	}
 	if expected := "This instance stores production logs."; cfg.InstructionsOverride() != expected {
 		t.Errorf("Expected instructions override %q, got: %q", expected, cfg.InstructionsOverride())
+	}
+}
+
+func TestInitConfigInsecureSkipVerify(t *testing.T) {
+	t.Setenv("VL_INSTANCE_ENTRYPOINT", "https://example.com")
+
+	// Default (unset) keeps verification enabled and uses http.DefaultClient.
+	t.Setenv("VL_INSTANCE_INSECURE_SKIP_VERIFY", "")
+	t.Setenv("VL_INSTANCE_CA_CERT", "")
+	t.Setenv("VL_INSTANCE_CA_CERT_FILE", "")
+	cfg, err := InitConfig()
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if cfg.InsecureSkipVerify() {
+		t.Error("Expected InsecureSkipVerify() to default to false")
+	}
+	if cfg.HTTPClient() != http.DefaultClient {
+		t.Error("Expected HTTPClient() to fall back to http.DefaultClient")
+	}
+
+	// Enabled: a dedicated client that accepts a self-signed TLS certificate.
+	t.Setenv("VL_INSTANCE_INSECURE_SKIP_VERIFY", "true")
+	cfg, err = InitConfig()
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if !cfg.InsecureSkipVerify() {
+		t.Error("Expected InsecureSkipVerify() to be true")
+	}
+	if cfg.HTTPClient() == http.DefaultClient {
+		t.Fatal("Expected a dedicated HTTP client, got http.DefaultClient")
+	}
+
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+	resp, err := cfg.HTTPClient().Get(ts.URL)
+	if err != nil {
+		t.Fatalf("Expected request to a self-signed server to succeed with skip-verify, got: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	// strconv.ParseBool accepts "1".
+	t.Setenv("VL_INSTANCE_INSECURE_SKIP_VERIFY", "1")
+	cfg, err = InitConfig()
+	if err != nil {
+		t.Fatalf("Expected no error for value '1', got: %v", err)
+	}
+	if !cfg.InsecureSkipVerify() {
+		t.Error("Expected InsecureSkipVerify() to be true for value '1'")
+	}
+
+	// Invalid boolean value fails at startup.
+	t.Setenv("VL_INSTANCE_INSECURE_SKIP_VERIFY", "notabool")
+	if _, err = InitConfig(); err == nil {
+		t.Fatal("Expected error for invalid VL_INSTANCE_INSECURE_SKIP_VERIFY, got nil")
+	}
+
+	// Mutually exclusive with the CA options.
+	t.Setenv("VL_INSTANCE_INSECURE_SKIP_VERIFY", "true")
+	t.Setenv("VL_INSTANCE_CA_CERT", "some-cert")
+	if _, err = InitConfig(); err == nil {
+		t.Fatal("Expected error for VL_INSTANCE_INSECURE_SKIP_VERIFY combined with VL_INSTANCE_CA_CERT, got nil")
 	}
 }

@@ -30,6 +30,9 @@ type Config struct {
 
 	entryPointURL *url.URL
 	httpClient    *http.Client
+	// insecureSkipVerify disables TLS certificate verification for requests to
+	// the VictoriaLogs instance. It is intended for development and testing only.
+	insecureSkipVerify bool
 
 	// Logging configuration
 	logFormat string
@@ -126,6 +129,16 @@ func InitConfig() (*Config, error) {
 		disableLocalhostProtection = v
 	}
 
+	insecureSkipVerify := false
+	insecureSkipVerifyStr := os.Getenv("VL_INSTANCE_INSECURE_SKIP_VERIFY")
+	if insecureSkipVerifyStr != "" {
+		v, err := strconv.ParseBool(insecureSkipVerifyStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse VL_INSTANCE_INSECURE_SKIP_VERIFY: %w", err)
+		}
+		insecureSkipVerify = v
+	}
+
 	result := &Config{
 		serverMode:                 strings.ToLower(os.Getenv("MCP_SERVER_MODE")),
 		listenAddr:                 os.Getenv("MCP_LISTEN_ADDR"),
@@ -142,6 +155,7 @@ func InitConfig() (*Config, error) {
 		disableLocalhostProtection: disableLocalhostProtection,
 		authToken:                  os.Getenv("MCP_AUTH_TOKEN"),
 		instructionsOverride:       strings.TrimSpace(os.Getenv("MCP_INSTRUCTIONS_OVERRIDE")),
+		insecureSkipVerify:         insecureSkipVerify,
 	}
 	// Left for backward compatibility
 	if result.listenAddr == "" {
@@ -185,8 +199,17 @@ func InitConfig() (*Config, error) {
 	if u, err := url.Parse(caCertFile); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
 		return nil, fmt.Errorf("VL_INSTANCE_CA_CERT_FILE must be a local file path, got URL %q", caCertFile)
 	}
+	if insecureSkipVerify && (caCert != "" || caCertFile != "") {
+		return nil, fmt.Errorf("VL_INSTANCE_INSECURE_SKIP_VERIFY cannot be used with VL_INSTANCE_CA_CERT or VL_INSTANCE_CA_CERT_FILE")
+	}
 	result.httpClient = http.DefaultClient
-	if caCert != "" || caCertFile != "" {
+	switch {
+	case insecureSkipVerify:
+		result.httpClient, err = newHTTPClientInsecure()
+		if err != nil {
+			return nil, err
+		}
+	case caCert != "" || caCertFile != "":
 		result.httpClient, err = newHTTPClientWithCA(caCert, caCertFile)
 		if err != nil {
 			return nil, err
@@ -221,6 +244,21 @@ func newHTTPClientWithCA(caCert, caCertFile string) (*http.Client, error) {
 	// Load the CA file once to fail at startup instead of on the first request.
 	if _, err := ac.GetTLSConfig(); err != nil {
 		return nil, fmt.Errorf("failed to load VL_INSTANCE_CA_CERT_FILE: %w", err)
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	return &http.Client{Transport: ac.NewRoundTripper(transport)}, nil
+}
+
+// newHTTPClientInsecure returns an HTTP client that disables TLS certificate
+// verification for requests to the VictoriaLogs instance. It is intended for
+// development and testing only.
+func newHTTPClientInsecure() (*http.Client, error) {
+	opts := &promauth.Options{
+		TLSConfig: &promauth.TLSConfig{InsecureSkipVerify: true},
+	}
+	ac, err := opts.NewConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure VL_INSTANCE_INSECURE_SKIP_VERIFY: %w", err)
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	return &http.Client{Transport: ac.NewRoundTripper(transport)}, nil
@@ -267,6 +305,12 @@ func (c *Config) HeartbeatInterval() time.Duration {
 // when one of them is set, and is http.DefaultClient otherwise.
 func (c *Config) HTTPClient() *http.Client {
 	return c.httpClient
+}
+
+// InsecureSkipVerify reports whether TLS certificate verification is disabled
+// for requests to the VictoriaLogs instance.
+func (c *Config) InsecureSkipVerify() bool {
+	return c.insecureSkipVerify
 }
 
 func (c *Config) CustomHeaders() map[string]string {

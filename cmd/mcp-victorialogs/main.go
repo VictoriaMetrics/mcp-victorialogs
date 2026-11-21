@@ -75,6 +75,10 @@ func main() {
 		return
 	}
 
+	if c.InsecureSkipVerify() {
+		slog.Warn("TLS certificate verification is disabled (VL_INSTANCE_INSECURE_SKIP_VERIFY=true). Do not use in production.")
+	}
+
 	if !c.IsStdio() {
 		slog.Info("Starting mcp-victorialogs",
 			"version", version,
