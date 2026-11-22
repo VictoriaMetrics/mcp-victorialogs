@@ -1,8 +1,10 @@
 package config
 
 import (
+	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -516,4 +518,75 @@ func TestInitConfigInstructionsOverride(t *testing.T) {
 	if expected := "This instance stores production logs."; cfg.InstructionsOverride() != expected {
 		t.Errorf("Expected instructions override %q, got: %q", expected, cfg.InstructionsOverride())
 	}
+}
+
+func TestInitConfigInsecureSkipVerify(t *testing.T) {
+	srv, caPEM := newTLSServer(t)
+	t.Setenv("VL_INSTANCE_ENTRYPOINT", srv.URL)
+	t.Setenv("VL_INSTANCE_CA_CERT", "")
+	t.Setenv("VL_INSTANCE_CA_CERT_FILE", "")
+
+	for _, value := range []string{"", "false", "0", "true", "1"} {
+		t.Run("value="+value, func(t *testing.T) {
+			t.Setenv("VL_INSTANCE_INSECURE_SKIP_VERIFY", value)
+			cfg, err := InitConfig()
+			if err != nil {
+				t.Fatalf("Unexpected config error: %v", err)
+			}
+			enabled := value == "true" || value == "1"
+			if cfg.InsecureSkipVerify() != enabled {
+				t.Fatalf("Expected InsecureSkipVerify()=%v", enabled)
+			}
+			if (cfg.HTTPClient() == http.DefaultClient) == enabled {
+				t.Fatal("Expected a dedicated client only when verification is disabled")
+			}
+			err = doGet(cfg, srv.URL)
+			if enabled && err != nil {
+				t.Fatalf("Expected self-signed certificate to be accepted: %v", err)
+			}
+			if !enabled && err == nil {
+				t.Fatal("Expected self-signed certificate to be rejected")
+			}
+			// A dedicated client must not disable verification globally.
+			if enabled {
+				resp, err := http.DefaultClient.Get(srv.URL)
+				if err == nil {
+					_ = resp.Body.Close()
+					t.Fatal("Default client unexpectedly accepted self-signed certificate")
+				}
+			}
+		})
+	}
+
+	t.Run("invalid boolean", func(t *testing.T) {
+		t.Setenv("VL_INSTANCE_INSECURE_SKIP_VERIFY", "notabool")
+		if _, err := InitConfig(); err == nil || !strings.Contains(err.Error(), "failed to parse VL_INSTANCE_INSECURE_SKIP_VERIFY") {
+			t.Fatalf("Expected boolean parsing error, got: %v", err)
+		}
+	})
+
+	for _, option := range []string{"VL_INSTANCE_CA_CERT", "VL_INSTANCE_CA_CERT_FILE"} {
+		t.Run("conflict with "+option, func(t *testing.T) {
+			t.Setenv("VL_INSTANCE_INSECURE_SKIP_VERIFY", "true")
+			t.Setenv(option, "some-cert")
+			if _, err := InitConfig(); err == nil || !strings.Contains(err.Error(), "VL_INSTANCE_INSECURE_SKIP_VERIFY cannot be used with") {
+				t.Fatalf("Expected conflicting TLS options error, got: %v", err)
+			}
+		})
+	}
+
+	t.Run("explicit false with CA", func(t *testing.T) {
+		t.Setenv("VL_INSTANCE_INSECURE_SKIP_VERIFY", "false")
+		t.Setenv("VL_INSTANCE_CA_CERT", caPEM)
+		cfg, err := InitConfig()
+		if err != nil {
+			t.Fatalf("Unexpected config error: %v", err)
+		}
+		if cfg.InsecureSkipVerify() {
+			t.Fatal("Expected certificate verification to remain enabled")
+		}
+		if err := doGet(cfg, srv.URL); err != nil {
+			t.Fatalf("Expected configured CA to be trusted: %v", err)
+		}
+	})
 }
