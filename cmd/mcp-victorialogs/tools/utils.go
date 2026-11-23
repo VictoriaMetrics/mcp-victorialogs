@@ -250,7 +250,7 @@ func getBearerToken(ctx context.Context, cfg *config.Config, tcr mcp.CallToolReq
 	}
 	if tokenID == "" {
 		for _, t := range at {
-			if t.Type != vmcloud.AccessModeWrite {
+			if (t.Type == vmcloud.AccessModeRead || t.Type == vmcloud.AccessModeReadWrite) && t.TenantID != "" {
 				return "", fmt.Errorf("deployment %s has only read access tokens limited to a tenant, which are not supported; create a read access token without a tenant", deploymentID)
 			}
 		}

@@ -232,8 +232,11 @@ func TestCreateSelectRequestCloudNoReadToken(t *testing.T) {
 		deployments: map[string]vmcloud.DeploymentInfo{
 			deploymentVLWriteOnly: {ID: deploymentVLWriteOnly, Type: vmcloud.DeploymentTypeVLogs, AccessEndpoint: "https://vl.cloud.example.com"},
 		},
-		tokens:  []vmcloud.AccessToken{{ID: "write", Type: vmcloud.AccessModeWrite}},
-		secrets: map[string]string{"write": "write-secret"},
+		tokens: []vmcloud.AccessToken{
+			{ID: "write", Type: vmcloud.AccessModeWrite},
+			{ID: "other", Type: "other"},
+		},
+		secrets: map[string]string{"write": "write-secret", "other": "other-secret"},
 	}
 	cfg := newCloudConfig(t, "test-key", api)
 
