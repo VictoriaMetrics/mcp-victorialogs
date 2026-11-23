@@ -18,17 +18,31 @@
       "environmentVariables": [
         {
           "name": "VL_INSTANCE_ENTRYPOINT",
-          "description": "URL to VictoriaMetrics instance (it should be root URL of vmlingle or vlselect), for example http://localhost:9428 or https://play-vmlogs.victoriametrics.com",
-          "isRequired": true,
+          "description": "URL to VictoriaLogs instance (it should be root URL of vlsingle or vlselect), for example http://localhost:9428 or https://play-vmlogs.victoriametrics.com. Required unless VMC_API_KEY is set, cannot be used with VMC_API_KEY",
+          "isRequired": false,
           "format": "string",
           "isSecret": false
         },
         {
           "name": "VL_INSTANCE_BEARER_TOKEN",
-          "description": "Authentication token for VictoriaMetrics API",
-          "isRequired": true,
+          "description": "Optional: authentication token for VictoriaLogs API",
+          "isRequired": false,
           "format": "string",
           "isSecret": true
+        },
+        {
+          "name": "VMC_API_KEY",
+          "description": "Optional: API key from VictoriaMetrics Cloud Console (if you have VictoriaLogs deployments in VictoriaMetrics Cloud). Required unless VL_INSTANCE_ENTRYPOINT is set, cannot be used with VL_INSTANCE_ENTRYPOINT",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "VMC_API_BASE_URL",
+          "description": "Optional: base URL of the VictoriaMetrics Cloud API, https://api.victoriametrics.cloud by default",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
         },
         {
           "name": "MCP_DISABLED_TOOLS",

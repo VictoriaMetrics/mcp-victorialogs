@@ -17,9 +17,9 @@ var (
 		mcp.WithDescription("Log stats for the given query at the given timestamp (time) in the format compatible with Prometheus querying API. This tool uses `/select/logsql/stats_query` endpoint of VictoriaLogs API."),
 		mcp.WithToolAnnotation(mcp.ToolAnnotation{
 			Title:           "Querying log stats",
-			ReadOnlyHint:    ptr(true),
-			DestructiveHint: ptr(false),
-			OpenWorldHint:   ptr(true),
+			ReadOnlyHint:    new(true),
+			DestructiveHint: new(false),
+			OpenWorldHint:   new(true),
 		}),
 		mcp.WithString("tenant",
 			mcp.Title("Tenant name (Account ID and Project ID)"),
@@ -73,7 +73,7 @@ func RegisterToolStatsQuery(s *server.MCPServer, c *config.Config) {
 	if c.IsToolDisabled(toolNameStatsQuery) {
 		return
 	}
-	s.AddTool(toolStatsQuery, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	s.AddTool(withCloudParams(c, toolStatsQuery), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return toolStatsQueryHandler(ctx, c, request)
 	})
 }

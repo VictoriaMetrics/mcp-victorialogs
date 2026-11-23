@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -75,6 +76,7 @@ func TestInitConfigCACert(t *testing.T) {
 		caCertPath    string // used as VL_INSTANCE_CA_CERT_FILE as is
 		expectedError string
 		expectTrusted bool
+		cloud         bool // use the TLS server as the VictoriaMetrics Cloud API
 	}{
 		{
 			name:          "not set",
@@ -121,11 +123,35 @@ func TestInitConfigCACert(t *testing.T) {
 			caCertFile:    caPEM,
 			expectedError: "VL_INSTANCE_CA_CERT and VL_INSTANCE_CA_CERT_FILE cannot be set at the same time",
 		},
+		{
+			name:          "cloud API not set",
+			cloud:         true,
+			expectTrusted: false,
+		},
+		{
+			name:          "cloud API PEM certificate",
+			caCert:        caPEM,
+			cloud:         true,
+			expectTrusted: true,
+		},
+		{
+			name:          "cloud API PEM certificate file",
+			caCertFile:    caPEM,
+			cloud:         true,
+			expectTrusted: true,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("VL_INSTANCE_ENTRYPOINT", srv.URL)
+			if tc.cloud {
+				t.Setenv("VMC_API_KEY", "test-key")
+				t.Setenv("VMC_API_BASE_URL", srv.URL)
+				t.Setenv("VL_INSTANCE_ENTRYPOINT", "")
+			} else {
+				t.Setenv("VMC_API_KEY", "")
+				t.Setenv("VL_INSTANCE_ENTRYPOINT", srv.URL)
+			}
 			t.Setenv("VL_INSTANCE_CA_CERT", tc.caCert)
 			caCertFile := tc.caCertPath
 			if tc.caCertFile != "" {
@@ -150,7 +176,11 @@ func TestInitConfigCACert(t *testing.T) {
 			if !tc.expectTrusted && cfg.HTTPClient() != http.DefaultClient {
 				t.Fatal("Expected http.DefaultClient when no CA is configured")
 			}
-			err = doGet(cfg, srv.URL)
+			if tc.cloud {
+				_, err = cfg.VMC().ListCloudProviders(context.Background())
+			} else {
+				err = doGet(cfg, srv.URL)
+			}
 			if tc.expectTrusted && err != nil {
 				t.Fatalf("Expected TLS request to succeed, got: %v", err)
 			}

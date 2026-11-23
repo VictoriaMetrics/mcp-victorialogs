@@ -8,6 +8,8 @@ github.com/VictoriaMetrics/metrics v1.45.0 h1:Tv8dZRAjkO90rBTxYrWOHUWFBHsAKdKcZY
 github.com/VictoriaMetrics/metrics v1.45.0/go.mod h1:xDM82ULLYCYdFRgQ2JBxi8Uf1+8En1So9YUwlGTOqTc=
 github.com/VictoriaMetrics/metricsql v0.87.6 h1:ntNG1DIPuodX4K/PA/fHHOW3ZyfIQBi/vjTldKxjpW8=
 github.com/VictoriaMetrics/metricsql v0.87.6/go.mod h1:d4EisFO6ONP/HIGDYTAtwrejJBBeKGQYiRl095bS4QQ=
+github.com/VictoriaMetrics/victoriametrics-cloud-api-go v0.4.0 h1:XZyoOiv1dsO/sUH5o4J6VdqWT/GXe0aOgwM9MEb0NTs=
+github.com/VictoriaMetrics/victoriametrics-cloud-api-go v0.4.0/go.mod h1:XHyIpFHz3YIPT1E5bKQ80nVVOwx6wk/LvexsjtHANAQ=
 github.com/bits-and-blooms/bitset v1.30.0 h1:6hfTqCR1/asc49NZlk4RR/X+IFGcl75YlV2AvKesMCk=
 github.com/bits-and-blooms/bitset v1.30.0/go.mod h1:7hO7Gc7Pp1vODcmWvKMRA9BNmbv6a/7QIWpPxHddWR8=
 github.com/blevesearch/bleve/v2 v2.6.3 h1:+TvSTA10Kr5c8Dj7gidTIufor8fg7pIj4rQu2Vmw9L0=

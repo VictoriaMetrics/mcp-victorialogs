@@ -11,6 +11,7 @@ import (
 
 	"github.com/VictoriaMetrics/VictoriaLogs/lib/logstorage"
 	"github.com/VictoriaMetrics/VictoriaMetrics/lib/promauth"
+	vmcloud "github.com/VictoriaMetrics/victoriametrics-cloud-api-go/v1"
 )
 
 type Config struct {
@@ -27,9 +28,13 @@ type Config struct {
 	disableLocalhostProtection bool
 	authToken                  string
 	instructionsOverride       string
+	apiKey                     string
+	apiBaseURL                 string
+	warnings                   []string
 
 	entryPointURL *url.URL
 	httpClient    *http.Client
+	vmc           *vmcloud.VMCloudAPIClient
 
 	// Logging configuration
 	logFormat string
@@ -142,13 +147,18 @@ func InitConfig() (*Config, error) {
 		disableLocalhostProtection: disableLocalhostProtection,
 		authToken:                  os.Getenv("MCP_AUTH_TOKEN"),
 		instructionsOverride:       strings.TrimSpace(os.Getenv("MCP_INSTRUCTIONS_OVERRIDE")),
+		apiKey:                     os.Getenv("VMC_API_KEY"),
+		apiBaseURL:                 os.Getenv("VMC_API_BASE_URL"),
 	}
 	// Left for backward compatibility
 	if result.listenAddr == "" {
 		result.listenAddr = os.Getenv("MCP_SSE_ADDR")
 	}
-	if result.entrypoint == "" {
-		return nil, fmt.Errorf("VL_INSTANCE_ENTRYPOINT is not set")
+	if result.entrypoint == "" && result.apiKey == "" {
+		return nil, fmt.Errorf("VL_INSTANCE_ENTRYPOINT or VMC_API_KEY is not set")
+	}
+	if result.entrypoint != "" && result.apiKey != "" {
+		return nil, fmt.Errorf("VL_INSTANCE_ENTRYPOINT and VMC_API_KEY cannot be set at the same time")
 	}
 	if result.serverMode != "" && result.serverMode != "stdio" && result.serverMode != "sse" && result.serverMode != "http" {
 		return nil, fmt.Errorf("MCP_SERVER_MODE must be 'stdio', 'sse' or 'http'")
@@ -158,6 +168,12 @@ func InitConfig() (*Config, error) {
 	}
 	if result.listenAddr == "" {
 		result.listenAddr = "localhost:8081"
+	}
+	if result.apiKey == vmcloud.DynamicAPIKey && result.serverMode == "stdio" {
+		return nil, fmt.Errorf("VMC_API_KEY=%s requires MCP_SERVER_MODE 'sse' or 'http', since the API key is taken from the %s header of every request", vmcloud.DynamicAPIKey, vmcloud.AccessTokenHeader)
+	}
+	if result.apiKey != "" {
+		result.warnings = cloudWarnings(result)
 	}
 
 	defaultTenantID := strings.ToLower(os.Getenv("VL_DEFAULT_TENANT_ID"))
@@ -171,9 +187,11 @@ func InitConfig() (*Config, error) {
 
 	var err error
 
-	result.entryPointURL, err = url.Parse(result.entrypoint)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse URL from VL_INSTANCE_ENTRYPOINT: %w", err)
+	if result.apiKey == "" {
+		result.entryPointURL, err = url.Parse(result.entrypoint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse URL from VL_INSTANCE_ENTRYPOINT: %w", err)
+		}
 	}
 
 	caCert := os.Getenv("VL_INSTANCE_CA_CERT")
@@ -190,6 +208,18 @@ func InitConfig() (*Config, error) {
 		result.httpClient, err = newHTTPClientWithCA(caCert, caCertFile)
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	if result.apiKey != "" {
+		var vmcOptions []vmcloud.VMCloudAPIClientOption
+		if result.apiBaseURL != "" {
+			vmcOptions = append(vmcOptions, vmcloud.WithBaseURL(result.apiBaseURL))
+		}
+		vmcOptions = append(vmcOptions, vmcloud.WithHTTPClient(result.httpClient))
+		result.vmc, err = vmcloud.New(result.apiKey, vmcOptions...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create VMCloud API client: %w", err)
 		}
 	}
 
@@ -262,7 +292,7 @@ func (c *Config) HeartbeatInterval() time.Duration {
 	return c.heartbeatInterval
 }
 
-// HTTPClient returns the client for requests to VictoriaLogs.
+// HTTPClient returns the client for requests to VictoriaLogs and the VictoriaMetrics Cloud API.
 // It trusts the CA certificates from VL_INSTANCE_CA_CERT or VL_INSTANCE_CA_CERT_FILE
 // when one of them is set, and is http.DefaultClient otherwise.
 func (c *Config) HTTPClient() *http.Client {
@@ -307,4 +337,48 @@ func (c *Config) AuthToken() string {
 // Empty means the default instructions are used.
 func (c *Config) InstructionsOverride() string {
 	return c.instructionsOverride
+}
+
+// IsCloud reports whether the server works with VictoriaMetrics Cloud deployments (VMC_API_KEY is set)
+// instead of a single VictoriaLogs instance from VL_INSTANCE_ENTRYPOINT.
+func (c *Config) IsCloud() bool {
+	return c.vmc != nil
+}
+
+// IsCloudSharedInstance reports whether the VictoriaMetrics Cloud API key is taken
+// from every incoming MCP request (VMC_API_KEY=dynamic) instead of the configuration.
+func (c *Config) IsCloudSharedInstance() bool {
+	return c.apiKey == vmcloud.DynamicAPIKey
+}
+
+// VMC returns the VictoriaMetrics Cloud API client, nil unless IsCloud.
+func (c *Config) VMC() *vmcloud.VMCloudAPIClient {
+	return c.vmc
+}
+
+// Warnings returns messages about settings that are accepted but probably do not work as intended.
+func (c *Config) Warnings() []string {
+	return c.warnings
+}
+
+// cloudWarnings returns warnings about settings that conflict with the access tokens
+// of VictoriaLogs deployments in VictoriaMetrics Cloud.
+func cloudWarnings(c *Config) []string {
+	var warnings []string
+	if c.bearerToken != "" {
+		warnings = append(warnings, "VL_INSTANCE_BEARER_TOKEN is ignored with VMC_API_KEY: requests to VictoriaLogs deployments use their access tokens")
+	}
+	for key := range c.customHeaders {
+		if http.CanonicalHeaderKey(key) == "Authorization" {
+			warnings = append(warnings, "VL_INSTANCE_HEADERS sets the Authorization header, which replaces the access token of VictoriaLogs deployments with VMC_API_KEY")
+			break
+		}
+	}
+	for _, name := range c.passthroughHeaders {
+		if http.CanonicalHeaderKey(name) == "Authorization" {
+			warnings = append(warnings, "MCP_PASSTHROUGH_HEADERS forwards the Authorization header, which replaces the access token of VictoriaLogs deployments with VMC_API_KEY when a request has it")
+			break
+		}
+	}
+	return warnings
 }
