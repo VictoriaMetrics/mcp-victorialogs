@@ -19,12 +19,13 @@ import (
 )
 
 const (
-	deploymentVLOK        = "00000000-0000-4000-8000-000000000001"
-	deploymentVM          = "00000000-0000-4000-8000-000000000002"
-	deploymentVLWriteOnly = "00000000-0000-4000-8000-000000000003"
-	deploymentVLShared    = "00000000-0000-4000-8000-000000000004"
-	deploymentVLReadWrite = "00000000-0000-4000-8000-000000000005"
-	deploymentMissing     = "00000000-0000-4000-8000-000000000009"
+	deploymentVLOK          = "00000000-0000-4000-8000-000000000001"
+	deploymentVM            = "00000000-0000-4000-8000-000000000002"
+	deploymentVLWriteOnly   = "00000000-0000-4000-8000-000000000003"
+	deploymentVLShared      = "00000000-0000-4000-8000-000000000004"
+	deploymentVLReadWrite   = "00000000-0000-4000-8000-000000000005"
+	deploymentVLEmptySecret = "00000000-0000-4000-8000-000000000006"
+	deploymentMissing       = "00000000-0000-4000-8000-000000000009"
 )
 
 // fakeCloudAPI serves the VictoriaMetrics Cloud API endpoints used to resolve a deployment.
@@ -382,6 +383,58 @@ func TestRuleFileTools(t *testing.T) {
 				t.Fatalf("Expected error containing %q, got: %v", tc.expectedError, r.Content)
 			}
 		})
+	}
+
+	for _, filename := range []string{
+		"../../access_tokens/read",
+		"../errors.yml",
+		"a/../../access_tokens/read",
+		"sub/errors.yml",
+		`sub\errors.yml`,
+		"..",
+		".hidden.yml",
+		"errors..yml",
+		"errors.yml%2F..",
+		strings.Repeat("a", 256),
+	} {
+		t.Run("invalid filename "+filename[:min(len(filename), 32)], func(t *testing.T) {
+			calls := api.calls.Load()
+			r, err := toolRuleFileHandler(context.Background(), cfg, newToolRequest(map[string]any{"deployment_id": deploymentVLOK, "filename": filename}))
+			if err != nil {
+				t.Fatalf("Expected a tool error result, got: %v", err)
+			}
+			if !r.IsError || !strings.Contains(r.Content[0].(mcp.TextContent).Text, "invalid filename") {
+				t.Fatalf("Expected invalid filename error, got: %v", r.Content)
+			}
+			if api.calls.Load() != calls {
+				t.Errorf("Expected no Cloud API calls for invalid filename %q", filename)
+			}
+		})
+	}
+}
+
+func TestCreateSelectRequestCloudEmptySecret(t *testing.T) {
+	api := &fakeCloudAPI{
+		deployments: map[string]vmcloud.DeploymentInfo{
+			deploymentVLEmptySecret: {ID: deploymentVLEmptySecret, Type: vmcloud.DeploymentTypeVLogs, AccessEndpoint: "https://vl.cloud.example.com"},
+		},
+		tokens:  []vmcloud.AccessToken{{ID: "read", Type: vmcloud.AccessModeRead}},
+		secrets: map[string]string{},
+	}
+	cfg := newCloudConfig(t, "test-key", api)
+
+	tcr := newToolRequest(map[string]any{"deployment_id": deploymentVLEmptySecret})
+	for range 2 {
+		_, err := CreateSelectRequest(context.Background(), cfg, tcr, "query")
+		if err == nil || !strings.Contains(err.Error(), "empty secret for access token read") {
+			t.Fatalf("Expected empty secret error, got: %v", err)
+		}
+	}
+	cloudAccessTokenCacheMutex.RLock()
+	_, cached := cloudAccessTokenCache["/"+deploymentVLEmptySecret]
+	cloudAccessTokenCacheMutex.RUnlock()
+	if cached {
+		t.Error("Expected the empty secret not to be cached")
 	}
 }
 

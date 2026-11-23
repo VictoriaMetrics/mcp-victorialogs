@@ -255,6 +255,9 @@ func getBearerToken(ctx context.Context, cfg *config.Config, tcr mcp.CallToolReq
 	if err != nil {
 		return "", fmt.Errorf("failed to reveal access token for deployment %s: %v", deploymentID, err)
 	}
+	if token.Secret == "" {
+		return "", fmt.Errorf("VictoriaMetrics Cloud API returned an empty secret for access token %s of deployment %s", tokenID, deploymentID)
+	}
 	cloudAccessTokenCacheMutex.Lock()
 	cloudAccessTokenCache[cacheKey] = token.Secret
 	cloudAccessTokenCacheMutex.Unlock()

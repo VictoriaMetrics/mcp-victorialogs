@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -10,7 +12,12 @@ import (
 	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/config"
 )
 
-const toolNameRuleFile = "rule_file"
+const (
+	toolNameRuleFile    = "rule_file"
+	ruleFilenamePattern = `^[A-Za-z0-9][A-Za-z0-9._-]*$`
+)
+
+var ruleFilenameRe = regexp.MustCompile(ruleFilenamePattern)
 
 var (
 	toolRuleFile = mcp.NewTool(toolNameRuleFile,
@@ -28,6 +35,7 @@ var (
 			mcp.Description("Name of the rules file to retrieve. This should be one of the files listed by the `rule_filenames` tool."),
 			mcp.MinLength(1),
 			mcp.MaxLength(255),
+			mcp.Pattern(ruleFilenamePattern),
 		),
 	)
 )
@@ -43,6 +51,9 @@ func toolRuleFileHandler(ctx context.Context, cfg *config.Config, tcr mcp.CallTo
 	}
 	if filename == "" {
 		return mcp.NewToolResultError("filename parameter must not be empty"), nil
+	}
+	if len(filename) > 255 || !ruleFilenameRe.MatchString(filename) || strings.Contains(filename, "..") {
+		return mcp.NewToolResultError(fmt.Sprintf("invalid filename %q: expected a plain file name listed by the `rule_filenames` tool", filename)), nil
 	}
 	if cfg.IsCloudSharedInstance() {
 		if ctx, err = withCloudAccessKey(ctx, tcr); err != nil {

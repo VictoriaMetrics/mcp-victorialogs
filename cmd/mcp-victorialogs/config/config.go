@@ -147,8 +147,8 @@ func InitConfig() (*Config, error) {
 		disableLocalhostProtection: disableLocalhostProtection,
 		authToken:                  os.Getenv("MCP_AUTH_TOKEN"),
 		instructionsOverride:       strings.TrimSpace(os.Getenv("MCP_INSTRUCTIONS_OVERRIDE")),
-		apiKey:                     os.Getenv("VMC_API_KEY"),
-		apiBaseURL:                 os.Getenv("VMC_API_BASE_URL"),
+		apiKey:                     strings.TrimSpace(os.Getenv("VMC_API_KEY")),
+		apiBaseURL:                 strings.TrimSpace(os.Getenv("VMC_API_BASE_URL")),
 	}
 	// Left for backward compatibility
 	if result.listenAddr == "" {

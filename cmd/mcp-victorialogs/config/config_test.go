@@ -233,6 +233,30 @@ func TestInitConfig(t *testing.T) {
 		}
 	})
 
+	t.Run("Cloud API key and base URL are trimmed", func(t *testing.T) {
+		t.Setenv("VL_INSTANCE_ENTRYPOINT", "")
+		t.Setenv("VMC_API_KEY", " dynamic\n")
+		t.Setenv("VMC_API_BASE_URL", " https://api.example.com\n")
+		t.Setenv("MCP_SERVER_MODE", "")
+
+		_, err := InitConfig()
+		if err == nil || !strings.HasPrefix(err.Error(), "VMC_API_KEY=dynamic requires MCP_SERVER_MODE") {
+			t.Fatalf("Expected a trimmed dynamic key to be rejected in stdio mode, got: %v", err)
+		}
+
+		t.Setenv("MCP_SERVER_MODE", "http")
+		cfg, err := InitConfig()
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+		if !cfg.IsCloudSharedInstance() {
+			t.Error("Expected IsCloudSharedInstance() to be true for a dynamic key with whitespace")
+		}
+		if got := cfg.VMC().BaseURL(); got != "https://api.example.com" {
+			t.Errorf("Expected trimmed VMC base URL, got: %q", got)
+		}
+	})
+
 	t.Run("Cloud shared instance in stdio mode", func(t *testing.T) {
 		t.Setenv("VL_INSTANCE_ENTRYPOINT", "")
 		t.Setenv("VMC_API_KEY", "dynamic")
