@@ -483,7 +483,8 @@ Here's a list of available tools:
 
 Additional tools available for [VictoriaMetrics Cloud](https://docs.victoriametrics.com/victoriametrics-cloud/) deployments (with `VMC_API_KEY` parameter).
 In this mode every VictoriaLogs tool except `documentation` takes a required `deployment_id` argument with the ID of the VictoriaLogs deployment to work with,
-and the MCP server uses a read access token of that deployment to query it.
+and the MCP server uses an access token of that deployment to query it: a read-only token without a tenant, or a read-write one when the deployment has no such read-only token.
+Create a read-only access token for the deployment to keep write credentials out of the MCP server.
 The `flags` tool is not available in this mode, since VictoriaMetrics Cloud does not expose the `/flags` endpoint of VictoriaLogs deployments to read access tokens.
 
 | Tool              | Description                                       |

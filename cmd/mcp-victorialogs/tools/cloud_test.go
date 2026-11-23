@@ -100,8 +100,21 @@ func (f *fakeCloudAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// resetCloudCaches clears the package-level deployment caches, so tests do not see entries
+// cached by other tests or by previous runs with -count.
+func resetCloudCaches() {
+	cloudAccessTokenCacheMutex.Lock()
+	clear(cloudAccessTokenCache)
+	cloudAccessTokenCacheMutex.Unlock()
+	cloudDeploymentEndpointCacheMux.Lock()
+	clear(cloudDeploymentEndpointCache)
+	cloudDeploymentEndpointCacheMux.Unlock()
+}
+
 func newCloudConfig(t *testing.T, apiKey string, api *fakeCloudAPI) *config.Config {
 	t.Helper()
+	resetCloudCaches()
+	t.Cleanup(resetCloudCaches)
 	srv := httptest.NewServer(api)
 	t.Cleanup(srv.Close)
 	t.Setenv("VL_INSTANCE_ENTRYPOINT", "")
@@ -228,6 +241,27 @@ func TestCreateSelectRequestCloudNoReadToken(t *testing.T) {
 	_, err := CreateSelectRequest(context.Background(), cfg, tcr, "query")
 	if err == nil || !strings.Contains(err.Error(), "no read access tokens found for deployment "+deploymentVLWriteOnly) {
 		t.Fatalf("Expected no read access tokens error, got: %v", err)
+	}
+}
+
+func TestCreateSelectRequestCloudTenantTokensOnly(t *testing.T) {
+	api := &fakeCloudAPI{
+		deployments: map[string]vmcloud.DeploymentInfo{
+			deploymentVLWriteOnly: {ID: deploymentVLWriteOnly, Type: vmcloud.DeploymentTypeVLogs, AccessEndpoint: "https://vl.cloud.example.com"},
+		},
+		tokens: []vmcloud.AccessToken{
+			{ID: "write", Type: vmcloud.AccessModeWrite},
+			{ID: "tenant-read", Type: vmcloud.AccessModeRead, TenantID: "1:0"},
+			{ID: "tenant-readwrite", Type: vmcloud.AccessModeReadWrite, TenantID: "2"},
+		},
+		secrets: map[string]string{"write": "write-secret", "tenant-read": "tenant-read-secret", "tenant-readwrite": "tenant-readwrite-secret"},
+	}
+	cfg := newCloudConfig(t, "test-key", api)
+
+	tcr := newToolRequest(map[string]any{"deployment_id": deploymentVLWriteOnly})
+	_, err := CreateSelectRequest(context.Background(), cfg, tcr, "query")
+	if err == nil || !strings.Contains(err.Error(), "has only read access tokens limited to a tenant") {
+		t.Fatalf("Expected tenant-limited tokens error, got: %v", err)
 	}
 }
 
@@ -391,11 +425,11 @@ func TestRuleFileTools(t *testing.T) {
 		"a/../../access_tokens/read",
 		"sub/errors.yml",
 		`sub\errors.yml`,
+		`..\..\access_tokens\read`,
+		".",
 		"..",
-		".hidden.yml",
-		"errors..yml",
-		"errors.yml%2F..",
 		strings.Repeat("a", 256),
+		strings.Repeat("я", 256),
 	} {
 		t.Run("invalid filename "+filename[:min(len(filename), 32)], func(t *testing.T) {
 			calls := api.calls.Load()
@@ -478,5 +512,42 @@ func TestToolRegistrationByMode(t *testing.T) {
 	// Read access tokens of VictoriaLogs deployments in VictoriaMetrics Cloud cannot reach /flags.
 	if s.GetTool("flags") != nil {
 		t.Error("Expected no flags tool with VMC_API_KEY")
+	}
+}
+
+func TestRuleFileUnusualNames(t *testing.T) {
+	names := []string{
+		"my rules.yml",
+		"_default.yml",
+		".hidden.yml",
+		"errors..yml",
+		"...",
+		"q?x#y.yml",
+		"правила.yml",
+		// The length limit counts characters, not bytes.
+		strings.Repeat("я", 255),
+		// Percent-encoded sequences stay literal, so they cannot reach other endpoints.
+		"50%.yml",
+		"a%25b.yml",
+		"errors.yml%2F..",
+		"x%2F..%2F..%2Faccess_tokens%2Fread",
+		"%2E%2E",
+	}
+	files := make(map[string]string, len(names))
+	for _, name := range names {
+		files[name] = "content of " + name
+	}
+	cfg := newCloudConfig(t, "test-key", &fakeCloudAPI{ruleFiles: files})
+
+	for _, name := range names {
+		t.Run(name, func(t *testing.T) {
+			r, err := toolRuleFileHandler(context.Background(), cfg, newToolRequest(map[string]any{"deployment_id": deploymentVLOK, "filename": name}))
+			if err != nil || r.IsError {
+				t.Fatalf("Expected no error, got: %v %v", err, r.Content)
+			}
+			if got, want := r.Content[0].(mcp.TextContent).Text, "content of "+name; got != want {
+				t.Errorf("Expected %q, got %q", want, got)
+			}
+		})
 	}
 }

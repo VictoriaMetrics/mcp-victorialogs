@@ -249,6 +249,11 @@ func getBearerToken(ctx context.Context, cfg *config.Config, tcr mcp.CallToolReq
 		}
 	}
 	if tokenID == "" {
+		for _, t := range at {
+			if t.Type != vmcloud.AccessModeWrite {
+				return "", fmt.Errorf("deployment %s has only read access tokens limited to a tenant, which are not supported; create a read access token without a tenant", deploymentID)
+			}
+		}
 		return "", fmt.Errorf("no read access tokens found for deployment %s", deploymentID)
 	}
 	token, err := cfg.VMC().RevealDeploymentAccessToken(ctx, deploymentID, tokenID)
@@ -306,11 +311,11 @@ func GetTextBodyForRequest(req *http.Request, cfg *config.Config) *mcp.CallToolR
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to do request: %v", err))
 	}
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to read response body: %v", err))
 	}
-	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return mcp.NewToolResultError(fmt.Sprintf("unexpected response status code %v: %s", resp.StatusCode, string(body)))
 	}
