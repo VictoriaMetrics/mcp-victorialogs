@@ -174,17 +174,16 @@ func main() {
 		loggerOption := server.WithStreamableHTTPLogger(logger.SlogLogger())
 		opts := []server.StreamableHTTPOption{heartBeatOption, loggerOption}
 		if c.Stateless() {
-			opts = append(opts, server.WithStateLess(true))
+			// Without session ids, every standalone GET stream shares one empty session id,
+			// so one client disconnecting would unregister the others (mark3labs/mcp-go#1327).
+			// mcp-go then answers GET with 405, after its Host, CORS and protocol checks.
+			opts = append(opts, server.WithStateLess(true), server.WithDisableStreaming(true))
 		}
 		if c.DisableLocalhostProtection() {
 			opts = append(opts, server.WithDisableLocalhostProtection(true))
 		}
 		srv := server.NewStreamableHTTPServer(s, opts...)
-		if c.Stateless() {
-			mux.Handle("/mcp", rejectStandaloneGET(srv))
-		} else {
-			mux.Handle("/mcp", srv)
-		}
+		mux.Handle("/mcp", srv)
 		mux.Handle("/", spaHandler())
 	default:
 		log.Fatalf("Unknown server mode: %s", c.ServerMode())
@@ -240,19 +239,4 @@ func main() {
 	}
 
 	slog.Info("Server stopped.")
-}
-
-// rejectStandaloneGET answers GET with 405 in stateless mode.
-// Without session ids, mcp-go keeps every standalone GET stream under the same empty
-// session id, so the first client to disconnect unregisters the session of all others.
-// The MCP specification allows 405 for servers that don't offer a standalone SSE stream.
-func rejectStandaloneGET(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			w.Header().Set("Allow", "POST, DELETE, HEAD")
-			http.Error(w, "GET streams are not available in stateless mode", http.StatusMethodNotAllowed)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
