@@ -516,7 +516,7 @@ func TestCreateSelectRequest_DefaultTenant(t *testing.T) {
 			}
 
 			// Call CreateSelectRequest
-			req, err := CreateSelectRequest(context.Background(), cfg, tcr, "query")
+			req, err := CreateSelectRequest(context.Background(), cfg, tcr, nil, "query")
 			if err != nil {
 				t.Fatalf("Failed to create request: %v", err)
 			}

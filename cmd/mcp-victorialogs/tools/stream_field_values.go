@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -72,19 +73,18 @@ func toolStreamFieldValuesHandler(ctx context.Context, cfg *config.Config, tcr m
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	req, err := CreateSelectRequest(ctx, cfg, tcr, "stream_field_values")
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to create request: %v", err)), nil
-	}
-
-	q := req.URL.Query()
+	q := url.Values{}
 	q.Add("query", query)
 	q.Add("start", start)
 	q.Add("field", field)
 	if end != "" {
 		q.Add("end", end)
 	}
-	req.URL.RawQuery = q.Encode()
+
+	req, err := CreateSelectRequest(ctx, cfg, tcr, q, "stream_field_values")
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to create request: %v", err)), nil
+	}
 
 	return GetTextBodyForRequest(req, cfg), nil
 }

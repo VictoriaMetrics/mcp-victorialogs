@@ -157,7 +157,7 @@ func TestCreateSelectRequestCloud(t *testing.T) {
 	cfg := newCloudConfig(t, "test-key", api)
 
 	tcr := newToolRequest(map[string]any{"deployment_id": deploymentVLOK})
-	req, err := CreateSelectRequest(context.Background(), cfg, tcr, "query")
+	req, err := CreateSelectRequest(context.Background(), cfg, tcr, nil, "query")
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestCreateSelectRequestCloud(t *testing.T) {
 
 	// The endpoint and the token are cached, so repeated requests do not hit the API.
 	calls := api.calls.Load()
-	if _, err := CreateSelectRequest(context.Background(), cfg, tcr, "query"); err != nil {
+	if _, err := CreateSelectRequest(context.Background(), cfg, tcr, nil, "query"); err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 	if api.calls.Load() != calls {
@@ -219,7 +219,7 @@ func TestCreateSelectRequestCloud(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := CreateSelectRequest(context.Background(), cfg, newToolRequest(tc.args), "query")
+			_, err := CreateSelectRequest(context.Background(), cfg, newToolRequest(tc.args), nil, "query")
 			if err == nil || !strings.Contains(err.Error(), tc.expectedError) {
 				t.Fatalf("Expected error containing %q, got: %v", tc.expectedError, err)
 			}
@@ -241,7 +241,7 @@ func TestCreateSelectRequestCloudNoReadToken(t *testing.T) {
 	cfg := newCloudConfig(t, "test-key", api)
 
 	tcr := newToolRequest(map[string]any{"deployment_id": deploymentVLWriteOnly})
-	_, err := CreateSelectRequest(context.Background(), cfg, tcr, "query")
+	_, err := CreateSelectRequest(context.Background(), cfg, tcr, nil, "query")
 	if err == nil || !strings.Contains(err.Error(), "no read access tokens found for deployment "+deploymentVLWriteOnly) {
 		t.Fatalf("Expected no read access tokens error, got: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestCreateSelectRequestCloudTenantTokensOnly(t *testing.T) {
 	cfg := newCloudConfig(t, "test-key", api)
 
 	tcr := newToolRequest(map[string]any{"deployment_id": deploymentVLWriteOnly})
-	_, err := CreateSelectRequest(context.Background(), cfg, tcr, "query")
+	_, err := CreateSelectRequest(context.Background(), cfg, tcr, nil, "query")
 	if err == nil || !strings.Contains(err.Error(), "has only read access tokens limited to a tenant") {
 		t.Fatalf("Expected tenant-limited tokens error, got: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestCreateSelectRequestCloudReadWriteToken(t *testing.T) {
 	cfg := newCloudConfig(t, "test-key", api)
 
 	tcr := newToolRequest(map[string]any{"deployment_id": deploymentVLReadWrite})
-	req, err := CreateSelectRequest(context.Background(), cfg, tcr, "query")
+	req, err := CreateSelectRequest(context.Background(), cfg, tcr, nil, "query")
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestCloudSharedInstanceMissingHeader(t *testing.T) {
 	cfg := newCloudConfig(t, vmcloud.DynamicAPIKey, &fakeCloudAPI{})
 	const expectedError = "X-VM-Cloud-Access header with a VictoriaMetrics Cloud API key is required"
 
-	_, err := CreateSelectRequest(context.Background(), cfg, newToolRequest(map[string]any{"deployment_id": deploymentVLOK}), "query")
+	_, err := CreateSelectRequest(context.Background(), cfg, newToolRequest(map[string]any{"deployment_id": deploymentVLOK}), nil, "query")
 	if err == nil || !strings.Contains(err.Error(), expectedError) {
 		t.Fatalf("Expected missing header error, got: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestCreateSelectRequestCloudSharedInstance(t *testing.T) {
 
 	tcr := newToolRequest(map[string]any{"deployment_id": deploymentVLShared})
 	tcr.Header.Set(vmcloud.AccessTokenHeader, "user-key")
-	if _, err := CreateSelectRequest(context.Background(), cfg, tcr, "query"); err != nil {
+	if _, err := CreateSelectRequest(context.Background(), cfg, tcr, nil, "query"); err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 	if len(api.requestAPIKeys()) == 0 {
@@ -340,7 +340,7 @@ func TestCreateSelectRequestCloudSharedInstance(t *testing.T) {
 	// Another user does not get the token cached for the first one.
 	calls := api.calls.Load()
 	tcr.Header.Set(vmcloud.AccessTokenHeader, "other-user-key")
-	if _, err := CreateSelectRequest(context.Background(), cfg, tcr, "query"); err != nil {
+	if _, err := CreateSelectRequest(context.Background(), cfg, tcr, nil, "query"); err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 	if api.calls.Load() == calls {
@@ -462,7 +462,7 @@ func TestCreateSelectRequestCloudEmptySecret(t *testing.T) {
 
 	tcr := newToolRequest(map[string]any{"deployment_id": deploymentVLEmptySecret})
 	for range 2 {
-		_, err := CreateSelectRequest(context.Background(), cfg, tcr, "query")
+		_, err := CreateSelectRequest(context.Background(), cfg, tcr, nil, "query")
 		if err == nil || !strings.Contains(err.Error(), "empty secret for access token read") {
 			t.Fatalf("Expected empty secret error, got: %v", err)
 		}
