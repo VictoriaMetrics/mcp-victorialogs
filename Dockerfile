@@ -17,6 +17,7 @@ RUN cd web && npm install && npm run build
 
 # Download dependencies and build
 RUN go mod download
+RUN go run ./scripts/docsindex
 RUN go build -o mcp-victorialogs ./cmd/mcp-victorialogs
 
 # Runtime stage

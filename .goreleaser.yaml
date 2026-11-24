@@ -4,6 +4,7 @@ project_name: mcp-victorialogs
 before:
   hooks:
     - make ui-build
+    - make docs-index
 
 builds:
   - env:

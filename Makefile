@@ -10,6 +10,10 @@ update-blog: download-blog
 
 update-resources: update-docs update-blog
 
+docs-index:
+	rm -f ./cmd/mcp-victorialogs/resources/docsindex/docs-index.tar.gz
+	go run ./scripts/docsindex
+
 test:
 	bash ./scripts/test-all.sh
 
@@ -19,7 +23,7 @@ check:
 lint:
 	bash ./scripts/lint-all.sh
 
-build: ui-build
+build: ui-build docs-index
 	bash ./scripts/build-binaries.sh
 
 ui-install:
