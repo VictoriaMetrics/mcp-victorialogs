@@ -4,10 +4,15 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
+	"net/url"
+	"slices"
 	"strconv"
+	"sync"
 
 	"github.com/VictoriaMetrics/VictoriaLogs/lib/logstorage"
+	vmcloud "github.com/VictoriaMetrics/victoriametrics-cloud-api-go/v1"
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/VictoriaMetrics/mcp-victorialogs/cmd/mcp-victorialogs/config"
@@ -33,7 +38,10 @@ func CreateSelectRequest(ctx context.Context, cfg *config.Config, tcr mcp.CallTo
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
-	bearerToken := cfg.BearerToken()
+	bearerToken, err := getBearerToken(ctx, cfg, tcr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get bearer token: %v", err)
+	}
 	if bearerToken != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", bearerToken))
 	}
@@ -74,7 +82,10 @@ func CreateAdminRequest(ctx context.Context, cfg *config.Config, tcr mcp.CallToo
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
-	bearerToken := cfg.BearerToken()
+	bearerToken, err := getBearerToken(ctx, cfg, tcr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get bearer token: %v", err)
+	}
 	if bearerToken != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", bearerToken))
 	}
@@ -94,12 +105,205 @@ func CreateAdminRequest(ctx context.Context, cfg *config.Config, tcr mcp.CallToo
 	return req, nil
 }
 
-func getRootURL(_ context.Context, cfg *config.Config, _ mcp.CallToolRequest, path ...string) (string, error) {
-	return cfg.EntryPointURL().JoinPath(path...).String(), nil
+// toolDeploymentIDParam is the name of the tool argument with the VictoriaMetrics Cloud deployment ID.
+const toolDeploymentIDParam = "deployment_id"
+
+// withCloudParams returns tool with the deployment_id argument added when the server works
+// with VictoriaMetrics Cloud, and tool itself otherwise.
+// The input schema is copied, so the package-level tool definitions stay untouched.
+func withCloudParams(c *config.Config, tool mcp.Tool) mcp.Tool {
+	if !c.IsCloud() {
+		return tool
+	}
+	tool.InputSchema.Properties = maps.Clone(tool.InputSchema.Properties)
+	if tool.InputSchema.Properties == nil {
+		tool.InputSchema.Properties = make(map[string]any)
+	}
+	tool.InputSchema.Required = slices.Clone(tool.InputSchema.Required)
+	withDeploymentIDParam()(&tool)
+	return tool
 }
 
-func getSelectURL(_ context.Context, cfg *config.Config, _ mcp.CallToolRequest, path ...string) (string, error) {
-	return cfg.EntryPointURL().JoinPath("select", "logsql").JoinPath(path...).String(), nil
+func withDeploymentIDParam() mcp.ToolOption {
+	return mcp.WithString(toolDeploymentIDParam,
+		mcp.Required(),
+		mcp.Title("Deployment ID"),
+		mcp.Description("Unique identifier of the VictoriaLogs deployment in VictoriaMetrics Cloud"),
+		mcp.Pattern(`^[a-zA-Z0-9\-_]+$`),
+	)
+}
+
+func getToolReqDeploymentID(tcr mcp.CallToolRequest) (string, error) {
+	deploymentID, err := GetToolReqParam[string](tcr, toolDeploymentIDParam, true)
+	if err != nil {
+		return "", fmt.Errorf("failed to get deployment_id parameter: %v", err)
+	}
+	if deploymentID == "" {
+		return "", fmt.Errorf("deployment_id parameter is required for cloud mode")
+	}
+	return deploymentID, nil
+}
+
+var (
+	cloudAccessTokenCacheMutex      = &sync.RWMutex{}
+	cloudAccessTokenCache           = make(map[string]string)
+	cloudDeploymentEndpointCacheMux = &sync.RWMutex{}
+	cloudDeploymentEndpointCache    = make(map[string]*url.URL)
+)
+
+// cloudCacheKey returns the key for the per-deployment caches. It includes the API key of the request
+// on a shared instance, so one user never gets data cached for another one.
+func cloudCacheKey(cfg *config.Config, tcr mcp.CallToolRequest, deploymentID string) string {
+	apiKey := ""
+	if cfg.IsCloudSharedInstance() {
+		apiKey = tcr.Header.Get(vmcloud.AccessTokenHeader)
+	}
+	return fmt.Sprintf("%s/%s", apiKey, deploymentID)
+}
+
+// getCloudDeploymentEndpoint returns the access endpoint of the VictoriaLogs deployment from the request.
+func getCloudDeploymentEndpoint(ctx context.Context, cfg *config.Config, tcr mcp.CallToolRequest) (*url.URL, error) {
+	deploymentID, err := getToolReqDeploymentID(tcr)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.IsCloudSharedInstance() {
+		if ctx, err = withCloudAccessKey(ctx, tcr); err != nil {
+			return nil, err
+		}
+	}
+	cacheKey := cloudCacheKey(cfg, tcr, deploymentID)
+
+	cloudDeploymentEndpointCacheMux.RLock()
+	endpoint, ok := cloudDeploymentEndpointCache[cacheKey]
+	cloudDeploymentEndpointCacheMux.RUnlock()
+	if ok {
+		return endpoint, nil
+	}
+
+	dd, err := cfg.VMC().GetDeploymentDetails(ctx, deploymentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get deployment details: %v", err)
+	}
+	if dd.Type != vmcloud.DeploymentTypeVLogs {
+		return nil, fmt.Errorf("unsupported deployment type %s for deployment %s, only %s deployments are supported", dd.Type, deploymentID, vmcloud.DeploymentTypeVLogs)
+	}
+	if dd.AccessEndpoint == "" {
+		return nil, fmt.Errorf("deployment %s has no access endpoint", deploymentID)
+	}
+	endpoint, err = url.Parse(dd.AccessEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse deployment access endpoint: %v", err)
+	}
+
+	cloudDeploymentEndpointCacheMux.Lock()
+	cloudDeploymentEndpointCache[cacheKey] = endpoint
+	cloudDeploymentEndpointCacheMux.Unlock()
+
+	return endpoint, nil
+}
+
+// getBearerToken returns VL_INSTANCE_BEARER_TOKEN, or in cloud mode the secret of an access token
+// of the deployment from the request: a read-only one, or a read-write one when the deployment
+// has no read-only tokens. Tokens limited to a tenant are skipped.
+func getBearerToken(ctx context.Context, cfg *config.Config, tcr mcp.CallToolRequest) (string, error) {
+	if !cfg.IsCloud() {
+		return cfg.BearerToken(), nil
+	}
+
+	deploymentID, err := getToolReqDeploymentID(tcr)
+	if err != nil {
+		return "", err
+	}
+	if cfg.IsCloudSharedInstance() {
+		if ctx, err = withCloudAccessKey(ctx, tcr); err != nil {
+			return "", err
+		}
+	}
+	cacheKey := cloudCacheKey(cfg, tcr, deploymentID)
+
+	cloudAccessTokenCacheMutex.RLock()
+	result, ok := cloudAccessTokenCache[cacheKey]
+	cloudAccessTokenCacheMutex.RUnlock()
+	if ok {
+		return result, nil
+	}
+
+	at, err := cfg.VMC().ListDeploymentAccessTokens(ctx, deploymentID)
+	if err != nil {
+		return "", fmt.Errorf("failed to list deployment access tokens: %v", err)
+	}
+	if len(at) == 0 {
+		return "", fmt.Errorf("no access tokens found for deployment %s", deploymentID)
+	}
+	tokenID := ""
+	for _, mode := range []vmcloud.AccessMode{vmcloud.AccessModeRead, vmcloud.AccessModeReadWrite} {
+		for _, t := range at {
+			if t.Type == mode && t.TenantID == "" {
+				tokenID = t.ID
+				break
+			}
+		}
+		if tokenID != "" {
+			break
+		}
+	}
+	if tokenID == "" {
+		for _, t := range at {
+			if (t.Type == vmcloud.AccessModeRead || t.Type == vmcloud.AccessModeReadWrite) && t.TenantID != "" {
+				return "", fmt.Errorf("deployment %s has only read access tokens limited to a tenant, which are not supported; create a read access token without a tenant", deploymentID)
+			}
+		}
+		return "", fmt.Errorf("no read access tokens found for deployment %s", deploymentID)
+	}
+	token, err := cfg.VMC().RevealDeploymentAccessToken(ctx, deploymentID, tokenID)
+	if err != nil {
+		return "", fmt.Errorf("failed to reveal access token for deployment %s: %v", deploymentID, err)
+	}
+	if token.Secret == "" {
+		return "", fmt.Errorf("VictoriaMetrics Cloud API returned an empty secret for access token %s of deployment %s", tokenID, deploymentID)
+	}
+	cloudAccessTokenCacheMutex.Lock()
+	cloudAccessTokenCache[cacheKey] = token.Secret
+	cloudAccessTokenCacheMutex.Unlock()
+	return token.Secret, nil
+}
+
+func getEntryPointURL(ctx context.Context, cfg *config.Config, tcr mcp.CallToolRequest) (*url.URL, error) {
+	if !cfg.IsCloud() {
+		return cfg.EntryPointURL(), nil
+	}
+	endpoint, err := getCloudDeploymentEndpoint(ctx, cfg, tcr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cloud deployment endpoint: %v", err)
+	}
+	return endpoint, nil
+}
+
+func getRootURL(ctx context.Context, cfg *config.Config, tcr mcp.CallToolRequest, path ...string) (string, error) {
+	entryPointURL, err := getEntryPointURL(ctx, cfg, tcr)
+	if err != nil {
+		return "", err
+	}
+	return entryPointURL.JoinPath(path...).String(), nil
+}
+
+func getSelectURL(ctx context.Context, cfg *config.Config, tcr mcp.CallToolRequest, path ...string) (string, error) {
+	entryPointURL, err := getEntryPointURL(ctx, cfg, tcr)
+	if err != nil {
+		return "", err
+	}
+	return entryPointURL.JoinPath("select", "logsql").JoinPath(path...).String(), nil
+}
+
+// withCloudAccessKey puts the VictoriaMetrics Cloud API key from the request header into ctx
+// for a shared instance (VMC_API_KEY=dynamic). The header is required there.
+func withCloudAccessKey(ctx context.Context, tcr mcp.CallToolRequest) (context.Context, error) {
+	accessKey := tcr.Header.Get(vmcloud.AccessTokenHeader)
+	if accessKey == "" {
+		return nil, fmt.Errorf("%s header with a VictoriaMetrics Cloud API key is required, since the server runs with VMC_API_KEY=%s", vmcloud.AccessTokenHeader, vmcloud.DynamicAPIKey)
+	}
+	return vmcloud.ContextWithDynamicAPIKey(ctx, accessKey), nil
 }
 
 func GetTextBodyForRequest(req *http.Request, cfg *config.Config) *mcp.CallToolResult {
@@ -107,11 +311,11 @@ func GetTextBodyForRequest(req *http.Request, cfg *config.Config) *mcp.CallToolR
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to do request: %v", err))
 	}
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to read response body: %v", err))
 	}
-	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return mcp.NewToolResultError(fmt.Sprintf("unexpected response status code %v: %s", resp.StatusCode, string(body)))
 	}
@@ -151,8 +355,4 @@ func GetToolReqTenant(tcr mcp.CallToolRequest) (string, string, error) {
 	accountID := strconv.FormatUint(uint64(tenantID.AccountID), 10)
 	projectID := strconv.FormatUint(uint64(tenantID.ProjectID), 10)
 	return accountID, projectID, nil
-}
-
-func ptr[T any](v T) *T {
-	return &v
 }

@@ -17,9 +17,9 @@ var (
 		mcp.WithDescription("The number of matching log entries for the given <query> on the given [<start> ... <end>] time range grouped by <step> buckets. The returned results are sorted by time. This tool uses `/select/logsql/hits` endpoint of VictoriaLogs API."),
 		mcp.WithToolAnnotation(mcp.ToolAnnotation{
 			Title:           "Log entries hits",
-			ReadOnlyHint:    ptr(true),
-			DestructiveHint: ptr(false),
-			OpenWorldHint:   ptr(true),
+			ReadOnlyHint:    new(true),
+			DestructiveHint: new(false),
+			OpenWorldHint:   new(true),
 		}),
 		mcp.WithString("tenant",
 			mcp.Title("Tenant name (Account ID and Project ID)"),
@@ -140,7 +140,7 @@ func RegisterToolHits(s *server.MCPServer, c *config.Config) {
 	if c.IsToolDisabled(toolNameHits) {
 		return
 	}
-	s.AddTool(toolHits, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	s.AddTool(withCloudParams(c, toolHits), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return toolHitsHandler(ctx, c, request)
 	})
 }

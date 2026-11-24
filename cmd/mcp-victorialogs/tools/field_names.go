@@ -17,9 +17,9 @@ var (
 		mcp.WithDescription("Get field names from results of the given <query> on the given [<start> ... <end>] time range. The response also contains the number of log results per every field name. This tool uses `/select/logsql/field_names` endpoint of VictoriaLogs API."),
 		mcp.WithToolAnnotation(mcp.ToolAnnotation{
 			Title:           "List of field names for the query",
-			ReadOnlyHint:    ptr(true),
-			DestructiveHint: ptr(false),
-			OpenWorldHint:   ptr(true),
+			ReadOnlyHint:    new(true),
+			DestructiveHint: new(false),
+			OpenWorldHint:   new(true),
 		}),
 		mcp.WithString("tenant",
 			mcp.Title("Tenant name (Account ID and Project ID)"),
@@ -82,7 +82,7 @@ func RegisterToolFieldNames(s *server.MCPServer, c *config.Config) {
 	if c.IsToolDisabled(toolNameFieldNames) {
 		return
 	}
-	s.AddTool(toolFieldNames, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	s.AddTool(withCloudParams(c, toolFieldNames), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return toolFieldNamesHandler(ctx, c, request)
 	})
 }

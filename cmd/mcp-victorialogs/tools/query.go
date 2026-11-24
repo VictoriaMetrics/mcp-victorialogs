@@ -17,9 +17,9 @@ var (
 		mcp.WithDescription("Executes LogsQL query expression to search log entries. This tool uses `/select/logsql/query` endpoint of VictoriaLogs API."),
 		mcp.WithToolAnnotation(mcp.ToolAnnotation{
 			Title:           "Query logs",
-			ReadOnlyHint:    ptr(true),
-			DestructiveHint: ptr(false),
-			OpenWorldHint:   ptr(true),
+			ReadOnlyHint:    new(true),
+			DestructiveHint: new(false),
+			OpenWorldHint:   new(true),
 		}),
 		mcp.WithString("tenant",
 			mcp.Title("Tenant name (Account ID and Project ID)"),
@@ -113,7 +113,7 @@ func RegisterToolQuery(s *server.MCPServer, c *config.Config) {
 	if c.IsToolDisabled(toolNameQuery) {
 		return
 	}
-	s.AddTool(toolQuery, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	s.AddTool(withCloudParams(c, toolQuery), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return toolQueryHandler(ctx, c, request)
 	})
 }

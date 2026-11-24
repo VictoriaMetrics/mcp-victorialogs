@@ -1,0 +1,383 @@
+package v1
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+)
+
+const (
+	// DefaultBaseURL is the default base URL for the VMCloud API
+	DefaultBaseURL = "https://api.victoriametrics.cloud"
+	// AccessTokenHeader is the header name for the access token
+	AccessTokenHeader = "X-VM-Cloud-Access"
+	// DynamicAPIKey - use this constant as a value for API key in the context to indicate that the API key
+	// should be taken from the context instead of the client configuration.
+	// This allows using different API keys for different requests with the same client instance.
+	DynamicAPIKey = "dynamic"
+)
+
+// VMCloudAPIClient represents a API client for VictoriaMetrics Cloud API
+type VMCloudAPIClient struct {
+	c         *http.Client
+	apiKey    string
+	baseURL   string
+	parsedURL *url.URL
+}
+
+// VMCloudAPIClientOption defines a functional option to configure a VMCloudAPIClient instance.
+type VMCloudAPIClientOption func(*VMCloudAPIClient)
+
+// WithHTTPClient sets a custom HTTP client for the VMCloudAPIClient instance.
+func WithHTTPClient(c *http.Client) VMCloudAPIClientOption {
+	return func(client *VMCloudAPIClient) {
+		client.c = c
+	}
+}
+
+// WithBaseURL sets a custom base URL for the VMCloudAPIClient instance.
+func WithBaseURL(baseURL string) VMCloudAPIClientOption {
+	return func(client *VMCloudAPIClient) {
+		client.baseURL = baseURL
+	}
+}
+
+// New creates a new VMCloudAPIClient instance with the provided API key and options.
+func New(apiKey string, options ...VMCloudAPIClientOption) (*VMCloudAPIClient, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("API key cannot be empty")
+	}
+	if apiKey == DynamicAPIKey {
+		apiKey = ""
+	}
+	result := &VMCloudAPIClient{
+		c:       http.DefaultClient,
+		apiKey:  apiKey,
+		baseURL: DefaultBaseURL,
+	}
+	for _, option := range options {
+		option(result)
+	}
+	var err error
+	result.parsedURL, err = url.Parse(result.baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse base URL %q: %w", result.baseURL, err)
+	}
+	return result, nil
+}
+
+// BaseURL returns the base URL of the VMCloudAPIClient instance.
+func (a *VMCloudAPIClient) BaseURL() string {
+	return a.baseURL
+}
+
+// ListCloudProviders retrieves the list of available cloud providers for deployments in VictoriaMetrics Cloud.
+func (a *VMCloudAPIClient) ListCloudProviders(ctx context.Context) (CloudProviderInfoList, error) {
+	return requestAPI[CloudProviderInfoList](ctx, a, http.MethodGet, nil, "/api/v1/cloud_providers")
+}
+
+// ListRegions retrieves the list of available regions for deployments in VictoriaMetrics Cloud.
+func (a *VMCloudAPIClient) ListRegions(ctx context.Context) (RegionInfoList, error) {
+	return requestAPI[RegionInfoList](ctx, a, http.MethodGet, nil, "/api/v1/regions")
+}
+
+// listOptions holds the filters of a list request.
+type listOptions struct {
+	deploymentTypes []DeploymentType
+}
+
+// ListOption defines a functional option that filters the result of a list request.
+type ListOption func(*listOptions)
+
+// WithDeploymentType restricts a list request to the given deployment types, e.g.
+// WithDeploymentType(DeploymentTypeSingleNode, DeploymentTypeCluster) for every
+// VictoriaMetrics deployment. Repeated options add up.
+// Without it the API returns entries of every deployment type.
+func WithDeploymentType(deploymentTypes ...DeploymentType) ListOption {
+	return func(o *listOptions) {
+		o.deploymentTypes = append(o.deploymentTypes, deploymentTypes...)
+	}
+}
+
+// listQuery turns the options into query parameters.
+//
+// The deployment types are forwarded as given rather than checked against the types this
+// build knows: filtering is a question for the API, and vetting it here would mean a
+// caller could not filter on a type added after this SDK was released. A type the API does
+// not know comes back as an API error.
+func listQuery(options []ListOption) url.Values {
+	var o listOptions
+	for _, option := range options {
+		option(&o)
+	}
+	query := url.Values{}
+	for _, deploymentType := range o.deploymentTypes {
+		query.Add("type", deploymentType.String())
+	}
+	return query
+}
+
+// ListTiers retrieves the list of available tiers for deployments in VictoriaMetrics Cloud.
+// Tiers of every deployment type are returned unless WithDeploymentType narrows the request.
+//
+// The limits of a tier live in the struct its deployment type calls for: TierInfo.Metrics
+// for single_node and cluster tiers, TierInfo.Logs for vlogs_single ones and
+// TierInfo.Traces for vtraces_single ones. The other two are nil.
+func (a *VMCloudAPIClient) ListTiers(ctx context.Context, options ...ListOption) (TierInfoList, error) {
+	return requestAPIWithQuery[TierInfoList](ctx, a, http.MethodGet, nil, listQuery(options), "/api/v1/tiers")
+}
+
+// ListDeployments retrieves a list of deployment summaries for the current account (API Key) in the VictoriaMetrics Cloud API.
+// Deployments of every type are returned unless WithDeploymentType narrows the request.
+func (a *VMCloudAPIClient) ListDeployments(ctx context.Context, options ...ListOption) (DeploymentSummaryList, error) {
+	return requestAPIWithQuery[DeploymentSummaryList](ctx, a, http.MethodGet, nil, listQuery(options), "/api/v1/deployments")
+}
+
+// GetDeploymentDetails retrieves detailed information about a specific deployment using its deployment ID.
+func (a *VMCloudAPIClient) GetDeploymentDetails(ctx context.Context, deploymentID string) (DeploymentInfo, error) {
+	if err := checkDeploymentID(deploymentID); err != nil {
+		return DeploymentInfo{}, err
+	}
+	return requestAPI[DeploymentInfo](ctx, a, http.MethodGet, nil, "/api/v1/deployments", deploymentID)
+}
+
+// CreateDeployment creates a new deployment in VictoriaMetrics Cloud based on the provided deployment configuration.
+func (a *VMCloudAPIClient) CreateDeployment(ctx context.Context, deployment DeploymentCreationRequest) (DeploymentInfo, error) {
+	// Validate common parameters
+	err := validateCommonDeploymentParams(
+		deployment.Name,
+		deployment.Tier,
+		deployment.MaintenanceWindow,
+		deployment.StorageSize,
+		deployment.StorageSizeUnit,
+		deployment.Retention,
+		deployment.RetentionUnit,
+	)
+	if err != nil {
+		return DeploymentInfo{}, err
+	}
+
+	// Validate creation-specific parameters
+	err = validateCreateDeploymentParams(
+		deployment.Type,
+		deployment.Region,
+		deployment.Provider,
+	)
+	if err != nil {
+		return DeploymentInfo{}, err
+	}
+
+	if err := validateDeduplicationForCreate(deployment.Type, deployment.Deduplication, deployment.DeduplicationUnit); err != nil {
+		return DeploymentInfo{}, err
+	}
+
+	body, err := json.Marshal(deployment)
+	if err != nil {
+		return DeploymentInfo{}, fmt.Errorf("failed to marshal deployment create request: %w", err)
+	}
+	return requestAPI[DeploymentInfo](ctx, a, http.MethodPost, bytes.NewReader(body), "/api/v1/deployments")
+}
+
+// UpdateDeployment updates the configuration of an existing deployment using the provided deployment ID and update request.
+func (a *VMCloudAPIClient) UpdateDeployment(ctx context.Context, deploymentID string, deployment DeploymentUpdateRequest) (DeploymentInfo, error) {
+	if err := checkDeploymentID(deploymentID); err != nil {
+		return DeploymentInfo{}, err
+	}
+
+	// Validate common parameters
+	err := validateCommonDeploymentParams(
+		deployment.Name,
+		deployment.Tier,
+		deployment.MaintenanceWindow,
+		deployment.StorageSize,
+		deployment.StorageSizeUnit,
+		deployment.Retention,
+		deployment.RetentionUnit,
+	)
+	if err != nil {
+		return DeploymentInfo{}, err
+	}
+
+	if err := validateDeduplicationForUpdate(deployment.Deduplication, deployment.DeduplicationUnit); err != nil {
+		return DeploymentInfo{}, err
+	}
+
+	body, err := json.Marshal(deployment)
+	if err != nil {
+		return DeploymentInfo{}, fmt.Errorf("failed to marshal deployment update request: %w", err)
+	}
+	return requestAPI[DeploymentInfo](ctx, a, http.MethodPut, bytes.NewReader(body), "/api/v1/deployments", deploymentID)
+}
+
+// DeleteDeployment deletes an existing deployment using its deployment ID.
+func (a *VMCloudAPIClient) DeleteDeployment(ctx context.Context, deploymentID string) error {
+	if err := checkDeploymentID(deploymentID); err != nil {
+		return err
+	}
+	_, err := requestAPI[any](ctx, a, http.MethodDelete, nil, "/api/v1/deployments", deploymentID)
+	if err != nil {
+		return fmt.Errorf("failed to delete deployment %q: %w", deploymentID, err)
+	}
+	return nil
+}
+
+// ListDeploymentAccessTokens retrieves a list of access tokens for a specific deployment using its deployment ID.
+func (a *VMCloudAPIClient) ListDeploymentAccessTokens(ctx context.Context, deploymentID string) (AccessTokensList, error) {
+	if err := checkDeploymentID(deploymentID); err != nil {
+		return nil, err
+	}
+	return requestAPI[AccessTokensList](ctx, a, http.MethodGet, nil, "/api/v1/deployments", deploymentID, "access_tokens")
+}
+
+// CreateDeploymentAccessToken creates a new access token for a specific deployment using its deployment ID and the provided access token creation request.
+func (a *VMCloudAPIClient) CreateDeploymentAccessToken(ctx context.Context, deploymentID string, token AccessTokenCreateRequest) (AccessToken, error) {
+	if err := checkDeploymentID(deploymentID); err != nil {
+		return AccessToken{}, err
+	}
+	if token.Description == "" {
+		return AccessToken{}, fmt.Errorf("access token description cannot be empty")
+	}
+	if token.Type != AccessModeRead && token.Type != AccessModeWrite && token.Type != AccessModeReadWrite {
+		return AccessToken{}, fmt.Errorf("invalid access token type: %s", token.Type)
+	}
+	if token.TenantID != "" && !isValidTenantID(token.TenantID) {
+		return AccessToken{}, fmt.Errorf("invalid tenant ID format: %s, expected <accountID> or <accountID>:<projectID>", token.TenantID)
+	}
+	body, err := json.Marshal(token)
+	if err != nil {
+		return AccessToken{}, fmt.Errorf("failed to marshal access token creation request: %w", err)
+	}
+	return requestAPI[AccessToken](ctx, a, http.MethodPost, bytes.NewReader(body), "/api/v1/deployments", deploymentID, "access_tokens")
+}
+
+// RevealDeploymentAccessToken retrieves the details of a specific access token with full secret value for a deployment using its deployment ID and token ID.
+func (a *VMCloudAPIClient) RevealDeploymentAccessToken(ctx context.Context, deploymentID, tokenID string) (AccessToken, error) {
+	if err := checkDeploymentID(deploymentID); err != nil {
+		return AccessToken{}, err
+	}
+	if tokenID == "" {
+		return AccessToken{}, fmt.Errorf("token ID cannot be empty")
+	}
+	return requestAPI[AccessToken](ctx, a, http.MethodGet, nil, "/api/v1/deployments", deploymentID, "access_tokens", tokenID)
+}
+
+// DeleteDeploymentAccessToken deletes a specific access token for a deployment using the deployment ID and token ID.
+func (a *VMCloudAPIClient) DeleteDeploymentAccessToken(ctx context.Context, deploymentID, tokenID string) error {
+	if err := checkDeploymentID(deploymentID); err != nil {
+		return err
+	}
+	if tokenID == "" {
+		return fmt.Errorf("token ID cannot be empty")
+	}
+	_, err := requestAPI[any](ctx, a, http.MethodDelete, nil, "/api/v1/deployments", deploymentID, "access_tokens", tokenID)
+	if err != nil {
+		return fmt.Errorf("failed to delete access token %q for deployment %q: %w", tokenID, deploymentID, err)
+	}
+	return nil
+}
+
+// ListDeploymentRuleFileNames retrieves the list of slerting/recording rules file names associated with a specific deployment by deployment ID.
+func (a *VMCloudAPIClient) ListDeploymentRuleFileNames(ctx context.Context, deploymentID string) ([]string, error) {
+	if err := checkDeploymentID(deploymentID); err != nil {
+		return nil, err
+	}
+	return requestAPI[[]string](ctx, a, http.MethodGet, nil, "/api/v1/deployments", deploymentID, "rule-sets", "files")
+}
+
+// GetDeploymentRuleFileContent retrieves the content of a specific alerting/recording rules file for a deployment by deployment ID and file name.
+func (a *VMCloudAPIClient) GetDeploymentRuleFileContent(ctx context.Context, deploymentID, ruleFileName string) (string, error) {
+	if err := checkDeploymentID(deploymentID); err != nil {
+		return "", err
+	}
+	if ruleFileName == "" {
+		return "", fmt.Errorf("rule file name cannot be empty")
+	}
+	return requestAPI[string](ctx, a, http.MethodGet, nil, "/api/v1/deployments", deploymentID, "rule-sets", "files", ruleFileName)
+}
+
+// RuleFile is an alerting/recording rules file with its version.
+type RuleFile struct {
+	Content string
+	// ETag is the file's version. Pass it to WithIfMatch so a write fails
+	// instead of overwriting a change made since the file was read.
+	ETag string
+}
+
+// GetDeploymentRuleFile retrieves an alerting/recording rules file of a deployment together with its version.
+func (a *VMCloudAPIClient) GetDeploymentRuleFile(ctx context.Context, deploymentID, ruleFileName string) (RuleFile, error) {
+	if err := checkDeploymentID(deploymentID); err != nil {
+		return RuleFile{}, err
+	}
+	if ruleFileName == "" {
+		return RuleFile{}, fmt.Errorf("rule file name cannot be empty")
+	}
+	body, header, err := doRequest(ctx, a, http.MethodGet, nil, nil, nil, "/api/v1/deployments", deploymentID, "rule-sets", "files", ruleFileName)
+	if err != nil {
+		return RuleFile{}, fmt.Errorf("failed to get rule file %q for deployment %q: %w", ruleFileName, deploymentID, err)
+	}
+	return RuleFile{Content: string(body), ETag: header.Get("ETag")}, nil
+}
+
+// UpdateDeploymentRuleFileContent updates the content of an existing alerting/recording rules file for a deployment by deployment ID and file name.
+// To make the write conditional, use UpdateDeploymentRuleFileContentWithOptions.
+func (a *VMCloudAPIClient) UpdateDeploymentRuleFileContent(ctx context.Context, deploymentID, ruleFileName, content string) error {
+	return a.UpdateDeploymentRuleFileContentWithOptions(ctx, deploymentID, ruleFileName, content)
+}
+
+// CreateDeploymentRuleFileContent creates a new alerting/recording rules file for a deployment by deployment ID and file name.
+// It overwrites an existing file of that name; to refuse that, use
+// UpdateDeploymentRuleFileContentWithOptions with WithIfNoneMatchAny.
+func (a *VMCloudAPIClient) CreateDeploymentRuleFileContent(ctx context.Context, deploymentID, ruleFileName, content string) error {
+	return a.UpdateDeploymentRuleFileContentWithOptions(ctx, deploymentID, ruleFileName, content)
+}
+
+// UpdateDeploymentRuleFileContentWithOptions writes an alerting/recording rules file, creating it if it does not exist.
+// WithIfMatch writes only over that version, WithIfNoneMatchAny only if the file does not exist yet,
+// and WithActor names the person the write is made for.
+func (a *VMCloudAPIClient) UpdateDeploymentRuleFileContentWithOptions(ctx context.Context, deploymentID, ruleFileName, content string, options ...RequestOption) error {
+	if err := checkDeploymentID(deploymentID); err != nil {
+		return err
+	}
+	if ruleFileName == "" {
+		return fmt.Errorf("rule file name cannot be empty")
+	}
+	headers, err := requestHeaders(options)
+	if err != nil {
+		return fmt.Errorf("failed to update rule file %q for deployment %q: %w", ruleFileName, deploymentID, err)
+	}
+	body := bytes.NewBufferString(content)
+	_, _, err = doRequest(ctx, a, http.MethodPost, body, nil, headers, "/api/v1/deployments", deploymentID, "rule-sets", "files", ruleFileName)
+	if err != nil {
+		return fmt.Errorf("failed to update rule file %q for deployment %q: %w", ruleFileName, deploymentID, err)
+	}
+	return nil
+}
+
+// DeleteDeploymentRuleFile deletes an existing alerting/recording rules file for a deployment by deployment ID and file name.
+// To make the delete conditional, use DeleteDeploymentRuleFileWithOptions.
+func (a *VMCloudAPIClient) DeleteDeploymentRuleFile(ctx context.Context, deploymentID, ruleFileName string) error {
+	return a.DeleteDeploymentRuleFileWithOptions(ctx, deploymentID, ruleFileName)
+}
+
+// DeleteDeploymentRuleFileWithOptions deletes an alerting/recording rules file.
+// WithIfMatch deletes only that version, and WithActor names the person the delete is made for.
+func (a *VMCloudAPIClient) DeleteDeploymentRuleFileWithOptions(ctx context.Context, deploymentID, ruleFileName string, options ...RequestOption) error {
+	if err := checkDeploymentID(deploymentID); err != nil {
+		return err
+	}
+	if ruleFileName == "" {
+		return fmt.Errorf("rule file name cannot be empty")
+	}
+	headers, err := requestHeaders(options)
+	if err != nil {
+		return fmt.Errorf("failed to delete rule file %q for deployment %q: %w", ruleFileName, deploymentID, err)
+	}
+	_, _, err = doRequest(ctx, a, http.MethodDelete, nil, nil, headers, "/api/v1/deployments", deploymentID, "rule-sets", "files", ruleFileName)
+	if err != nil {
+		return fmt.Errorf("failed to delete rule file %q for deployment %q: %w", ruleFileName, deploymentID, err)
+	}
+	return nil
+}

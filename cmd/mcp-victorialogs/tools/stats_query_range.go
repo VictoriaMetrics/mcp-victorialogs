@@ -17,9 +17,9 @@ var (
 		mcp.WithDescription("Log stats for the given query on the given [start ... end] time range with the given step interval. The stats is returned in the format compatible with Prometheus querying API. This tool uses `/select/logsql/stats_query_range` endpoint of VictoriaLogs API."),
 		mcp.WithToolAnnotation(mcp.ToolAnnotation{
 			Title:           "Querying log stats",
-			ReadOnlyHint:    ptr(true),
-			DestructiveHint: ptr(false),
-			OpenWorldHint:   ptr(true),
+			ReadOnlyHint:    new(true),
+			DestructiveHint: new(false),
+			OpenWorldHint:   new(true),
 		}),
 		mcp.WithString("tenant",
 			mcp.Title("Tenant name (Account ID and Project ID)"),
@@ -101,7 +101,7 @@ func RegisterToolStatsQueryRange(s *server.MCPServer, c *config.Config) {
 	if c.IsToolDisabled(toolNameStatsQueryRange) {
 		return
 	}
-	s.AddTool(toolStatsQueryRange, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	s.AddTool(withCloudParams(c, toolStatsQueryRange), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return toolStatsQueryRangeHandler(ctx, c, request)
 	})
 }

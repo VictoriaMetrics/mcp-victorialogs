@@ -17,9 +17,9 @@ var (
 		mcp.WithDescription("The most frequent values per each log field seen in the logs returned by the given <query> on the given [<start> ... <end>] time range. This tool uses `/select/logsql/facets` endpoint of VictoriaLogs API."),
 		mcp.WithToolAnnotation(mcp.ToolAnnotation{
 			Title:           "Most frequent values",
-			ReadOnlyHint:    ptr(true),
-			DestructiveHint: ptr(false),
-			OpenWorldHint:   ptr(true),
+			ReadOnlyHint:    new(true),
+			DestructiveHint: new(false),
+			OpenWorldHint:   new(true),
 		}),
 		mcp.WithString("tenant",
 			mcp.Title("Tenant name (Account ID and Project ID)"),
@@ -131,7 +131,7 @@ func RegisterToolFacets(s *server.MCPServer, c *config.Config) {
 	if c.IsToolDisabled(toolNameFacets) {
 		return
 	}
-	s.AddTool(toolFacets, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	s.AddTool(withCloudParams(c, toolFacets), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return toolFacetsHandler(ctx, c, request)
 	})
 }

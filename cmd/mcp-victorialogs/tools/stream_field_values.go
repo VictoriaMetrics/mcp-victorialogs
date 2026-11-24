@@ -17,9 +17,9 @@ var (
 		mcp.WithDescription("Get unique values for the given <fieldName> field from results of the given <query> on the given [<start> ... <end>] time range. The response also contains the number of log results per every field value. This tool uses `/select/logsql/stream_field_values` endpoint of VictoriaLogs API."),
 		mcp.WithToolAnnotation(mcp.ToolAnnotation{
 			Title:           "List of stream field values",
-			ReadOnlyHint:    ptr(true),
-			DestructiveHint: ptr(false),
-			OpenWorldHint:   ptr(true),
+			ReadOnlyHint:    new(true),
+			DestructiveHint: new(false),
+			OpenWorldHint:   new(true),
 		}),
 		mcp.WithString("tenant",
 			mcp.Title("Tenant name (Account ID and Project ID)"),
@@ -93,7 +93,7 @@ func RegisterToolStreamFieldValues(s *server.MCPServer, c *config.Config) {
 	if c.IsToolDisabled(toolNameStreamFieldValues) {
 		return
 	}
-	s.AddTool(toolStreamFieldValues, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	s.AddTool(withCloudParams(c, toolStreamFieldValues), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return toolStreamFieldValuesHandler(ctx, c, request)
 	})
 }

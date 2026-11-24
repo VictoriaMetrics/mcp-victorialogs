@@ -3,6 +3,7 @@ package config
 import (
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -169,6 +170,148 @@ func TestInitConfig(t *testing.T) {
 		// Check for errors
 		if err == nil {
 			t.Fatal("Expected error for missing entrypoint, got nil")
+		}
+	})
+
+	t.Run("Missing entrypoint and cloud API key", func(t *testing.T) {
+		t.Setenv("VL_INSTANCE_ENTRYPOINT", "")
+		t.Setenv("VMC_API_KEY", "")
+
+		_, err := InitConfig()
+		if err == nil || err.Error() != "VL_INSTANCE_ENTRYPOINT or VMC_API_KEY is not set" {
+			t.Fatalf("Expected missing entrypoint error, got: %v", err)
+		}
+	})
+
+	t.Run("Entrypoint and cloud API key together", func(t *testing.T) {
+		t.Setenv("VL_INSTANCE_ENTRYPOINT", "http://example.com")
+		t.Setenv("VMC_API_KEY", "test-key")
+
+		_, err := InitConfig()
+		if err == nil || err.Error() != "VL_INSTANCE_ENTRYPOINT and VMC_API_KEY cannot be set at the same time" {
+			t.Fatalf("Expected mutually exclusive error, got: %v", err)
+		}
+	})
+
+	t.Run("Cloud API key", func(t *testing.T) {
+		t.Setenv("VL_INSTANCE_ENTRYPOINT", "")
+		t.Setenv("VMC_API_KEY", "test-key")
+		t.Setenv("VMC_API_BASE_URL", "https://api.example.com")
+
+		cfg, err := InitConfig()
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+		if !cfg.IsCloud() {
+			t.Error("Expected IsCloud() to be true")
+		}
+		if cfg.IsCloudSharedInstance() {
+			t.Error("Expected IsCloudSharedInstance() to be false")
+		}
+		if cfg.VMC() == nil {
+			t.Fatal("Expected VMC() to be non-nil")
+		}
+		if got := cfg.VMC().BaseURL(); got != "https://api.example.com" {
+			t.Errorf("Expected VMC base URL 'https://api.example.com', got: %s", got)
+		}
+		if cfg.EntryPointURL() != nil {
+			t.Errorf("Expected nil EntryPointURL in cloud mode, got: %v", cfg.EntryPointURL())
+		}
+	})
+
+	t.Run("Cloud shared instance", func(t *testing.T) {
+		t.Setenv("VL_INSTANCE_ENTRYPOINT", "")
+		t.Setenv("VMC_API_KEY", "dynamic")
+		t.Setenv("MCP_SERVER_MODE", "http")
+
+		cfg, err := InitConfig()
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+		if !cfg.IsCloud() || !cfg.IsCloudSharedInstance() {
+			t.Error("Expected IsCloud() and IsCloudSharedInstance() to be true")
+		}
+	})
+
+	t.Run("Cloud API key and base URL are trimmed", func(t *testing.T) {
+		t.Setenv("VL_INSTANCE_ENTRYPOINT", "")
+		t.Setenv("VMC_API_KEY", " dynamic\n")
+		t.Setenv("VMC_API_BASE_URL", " https://api.example.com\n")
+		t.Setenv("MCP_SERVER_MODE", "")
+
+		_, err := InitConfig()
+		if err == nil || !strings.HasPrefix(err.Error(), "VMC_API_KEY=dynamic requires MCP_SERVER_MODE") {
+			t.Fatalf("Expected a trimmed dynamic key to be rejected in stdio mode, got: %v", err)
+		}
+
+		t.Setenv("MCP_SERVER_MODE", "http")
+		cfg, err := InitConfig()
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+		if !cfg.IsCloudSharedInstance() {
+			t.Error("Expected IsCloudSharedInstance() to be true for a dynamic key with whitespace")
+		}
+		if got := cfg.VMC().BaseURL(); got != "https://api.example.com" {
+			t.Errorf("Expected trimmed VMC base URL, got: %q", got)
+		}
+	})
+
+	t.Run("Cloud shared instance in stdio mode", func(t *testing.T) {
+		t.Setenv("VL_INSTANCE_ENTRYPOINT", "")
+		t.Setenv("VMC_API_KEY", "dynamic")
+		t.Setenv("MCP_SERVER_MODE", "")
+
+		_, err := InitConfig()
+		if err == nil || !strings.HasPrefix(err.Error(), "VMC_API_KEY=dynamic requires MCP_SERVER_MODE 'sse' or 'http'") {
+			t.Fatalf("Expected stdio mode error, got: %v", err)
+		}
+	})
+
+	t.Run("Cloud warnings", func(t *testing.T) {
+		t.Setenv("VL_INSTANCE_ENTRYPOINT", "")
+		t.Setenv("VMC_API_KEY", "test-key")
+		t.Setenv("VL_INSTANCE_BEARER_TOKEN", "old-token")
+		t.Setenv("VL_INSTANCE_HEADERS", "authorization=Bearer old,X-Custom=1")
+		t.Setenv("MCP_PASSTHROUGH_HEADERS", "X-Token,Authorization")
+
+		cfg, err := InitConfig()
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+		warnings := strings.Join(cfg.Warnings(), "\n")
+		for _, name := range []string{"VL_INSTANCE_BEARER_TOKEN", "VL_INSTANCE_HEADERS", "MCP_PASSTHROUGH_HEADERS"} {
+			if !strings.Contains(warnings, name) {
+				t.Errorf("Expected a warning about %s, got: %q", name, warnings)
+			}
+		}
+	})
+
+	t.Run("No warnings without cloud", func(t *testing.T) {
+		t.Setenv("VL_INSTANCE_ENTRYPOINT", "http://example.com")
+		t.Setenv("VMC_API_KEY", "")
+		t.Setenv("VL_INSTANCE_BEARER_TOKEN", "token")
+		t.Setenv("VL_INSTANCE_HEADERS", "Authorization=Bearer x")
+
+		cfg, err := InitConfig()
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+		if len(cfg.Warnings()) != 0 {
+			t.Errorf("Expected no warnings, got: %v", cfg.Warnings())
+		}
+	})
+
+	t.Run("No cloud without API key", func(t *testing.T) {
+		t.Setenv("VL_INSTANCE_ENTRYPOINT", "http://example.com")
+		t.Setenv("VMC_API_KEY", "")
+
+		cfg, err := InitConfig()
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+		if cfg.IsCloud() || cfg.VMC() != nil {
+			t.Error("Expected IsCloud() to be false and VMC() to be nil")
 		}
 	})
 

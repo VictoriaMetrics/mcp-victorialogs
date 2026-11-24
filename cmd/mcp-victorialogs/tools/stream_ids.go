@@ -17,9 +17,9 @@ var (
 		mcp.WithDescription("Get _stream_id values for the log streams from results of the given <query> on the given [<start> ... <end>] time range. The response also contains the number of log results per every _stream_id. This tool uses `/select/logsql/stream_ids` endpoint of VictoriaLogs API."),
 		mcp.WithToolAnnotation(mcp.ToolAnnotation{
 			Title:           "Stream IDs list",
-			ReadOnlyHint:    ptr(true),
-			DestructiveHint: ptr(false),
-			OpenWorldHint:   ptr(true),
+			ReadOnlyHint:    new(true),
+			DestructiveHint: new(false),
+			OpenWorldHint:   new(true),
 		}),
 		mcp.WithString("tenant",
 			mcp.Title("Tenant name (Account ID and Project ID)"),
@@ -82,7 +82,7 @@ func RegisterToolStreamIDs(s *server.MCPServer, c *config.Config) {
 	if c.IsToolDisabled(toolNameStreamIDs) {
 		return
 	}
-	s.AddTool(toolStreamIDs, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	s.AddTool(withCloudParams(c, toolStreamIDs), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return toolStreamIDsHandler(ctx, c, request)
 	})
 }

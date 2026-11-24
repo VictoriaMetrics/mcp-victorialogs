@@ -19,9 +19,9 @@ var (
 		mcp.WithDescription("Search documentation resources for the given search query, returning the URIs of the resources that match the search criteria sorted by relevance. This tool can help to get context for any VictoriaLogs related question."),
 		mcp.WithToolAnnotation(mcp.ToolAnnotation{
 			Title:           "Search documentation resources",
-			ReadOnlyHint:    ptr(true),
-			DestructiveHint: ptr(false),
-			OpenWorldHint:   ptr(false),
+			ReadOnlyHint:    new(true),
+			DestructiveHint: new(false),
+			OpenWorldHint:   new(false),
 		}),
 		mcp.WithString("query",
 			mcp.Required(),
