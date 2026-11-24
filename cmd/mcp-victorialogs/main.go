@@ -186,7 +186,10 @@ func main() {
 		loggerOption := server.WithStreamableHTTPLogger(logger.SlogLogger())
 		opts := []server.StreamableHTTPOption{heartBeatOption, loggerOption}
 		if c.Stateless() {
-			opts = append(opts, server.WithStateLess(true))
+			// Without session ids, every standalone GET stream shares one empty session id,
+			// so one client disconnecting would unregister the others (mark3labs/mcp-go#1327).
+			// mcp-go then answers GET with 405, after its Host, CORS and protocol checks.
+			opts = append(opts, server.WithStateLess(true), server.WithDisableStreaming(true))
 		}
 		if c.DisableLocalhostProtection() {
 			opts = append(opts, server.WithDisableLocalhostProtection(true))
