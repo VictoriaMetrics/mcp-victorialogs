@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/VictoriaMetrics/VictoriaLogs/lib/logstorage"
@@ -23,7 +24,10 @@ import (
 // them server-side - so the handlers apply this themselves.
 const defaultStep = "1d"
 
-func CreateSelectRequest(ctx context.Context, cfg *config.Config, tcr mcp.CallToolRequest, path ...string) (*http.Request, error) {
+// CreateSelectRequest creates a request to the /select/logsql/... API that sends args in a
+// form-encoded POST body rather than in the URL, since proxies in front of VictoriaLogs
+// write request URLs, LogsQL queries included, to their access logs.
+func CreateSelectRequest(ctx context.Context, cfg *config.Config, tcr mcp.CallToolRequest, args url.Values, path ...string) (*http.Request, error) {
 	accountID, projectID, err := GetToolReqTenant(tcr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tenant: %v", err)
@@ -34,10 +38,14 @@ func CreateSelectRequest(ctx context.Context, cfg *config.Config, tcr mcp.CallTo
 		return nil, fmt.Errorf("failed to get select URL: %v", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, selectURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, selectURL, strings.NewReader(args.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// Select requests only read data. An empty Idempotency-Key marks them idempotent without being
+	// sent, so net/http retries them on a reused connection the server has closed, as it does for GET.
+	req.Header["Idempotency-Key"] = nil
 	bearerToken, err := getBearerToken(ctx, cfg, tcr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get bearer token: %v", err)

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -54,17 +55,16 @@ func toolStatsQueryHandler(ctx context.Context, cfg *config.Config, tcr mcp.Call
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	req, err := CreateSelectRequest(ctx, cfg, tcr, "stats_query")
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to create request: %v", err)), nil
-	}
-
-	q := req.URL.Query()
+	q := url.Values{}
 	q.Add("query", query)
 	if time != "" {
 		q.Add("time", time)
 	}
-	req.URL.RawQuery = q.Encode()
+
+	req, err := CreateSelectRequest(ctx, cfg, tcr, q, "stats_query")
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to create request: %v", err)), nil
+	}
 
 	return GetTextBodyForRequest(req, cfg), nil
 }
