@@ -2,8 +2,8 @@ github.com/RoaringBitmap/roaring/v2 v2.30.0 h1:1sD4xsCenNd9n/gOWaExCWanP9WTyiNuq
 github.com/RoaringBitmap/roaring/v2 v2.30.0/go.mod h1:BZufmFbox589n3j5eOmyTaLSGXbRLc2LmQvjKjzSEGU=
 github.com/VictoriaMetrics/VictoriaLogs v1.54.1-0.20261114122617-2a63b8796d28 h1:TSCCnRowsc70L35bm8G3eKgVFbWiMgGuFDZ46CCk4+M=
 github.com/VictoriaMetrics/VictoriaLogs v1.54.1-0.20261114122617-2a63b8796d28/go.mod h1:rCzNQCk2weUUcgc3cZw+fRTozZ06NfRXBN/9c7u2F9k=
-github.com/VictoriaMetrics/VictoriaMetrics v1.156.0 h1:/cMyRMfDdDk7Wkc/gmZYeg3zH2pwon6f8q4CGCpBC3E=
-github.com/VictoriaMetrics/VictoriaMetrics v1.156.0/go.mod h1:h7OjBlvPVyEo/49J5feUpqgwyjpc98FgkJgXy6YAxog=
+github.com/VictoriaMetrics/VictoriaMetrics v1.157.0 h1:2NsI+3A5robbN7+qad4V5KNjihV/FHVlQNHc/iNHG2U=
+github.com/VictoriaMetrics/VictoriaMetrics v1.157.0/go.mod h1:rTUpMxHGs7l5B6HVgj4TRuI2ARuZu/Jr6N9Ypqg/1X8=
 github.com/VictoriaMetrics/metrics v1.45.0 h1:Tv8dZRAjkO90rBTxYrWOHUWFBHsAKdKcZYmS/Wbo2EU=
 github.com/VictoriaMetrics/metrics v1.45.0/go.mod h1:xDM82ULLYCYdFRgQ2JBxi8Uf1+8En1So9YUwlGTOqTc=
 github.com/VictoriaMetrics/metricsql v0.87.6 h1:ntNG1DIPuodX4K/PA/fHHOW3ZyfIQBi/vjTldKxjpW8=

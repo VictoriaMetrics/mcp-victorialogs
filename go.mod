@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/VictoriaMetrics/VictoriaLogs v1.54.1-0.20261114122617-2a63b8796d28
-	github.com/VictoriaMetrics/VictoriaMetrics v1.156.0
+	github.com/VictoriaMetrics/VictoriaMetrics v1.157.0
 	github.com/VictoriaMetrics/metrics v1.45.0
 	github.com/VictoriaMetrics/victoriametrics-cloud-api-go v0.4.0
 	github.com/blevesearch/bleve/v2 v2.6.3
